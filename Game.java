@@ -1,661 +1,686 @@
-import java.util.*;
-import java.awt.*;
-import java.awt.event.*;
-import javax.swing.*;
+import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
-class Game extends JFrame implements ActionListener, KeyEventDispatcher {
-	private final int[] takeS = { 0, 102, 68, 34, 0, 102, 68, 34 };
-	private final int[] unitX = { 0, Elem.cW, 0, -Elem.cW, 0 };
-	private final int[] unitY = { 0, 0, Elem.cW, 0, -Elem.cW };
-	private final int[] anchorX =
-	{ 0, Elem.cW*2 + Elem.eCM, Elem.WinS - Elem.cW*2 - Elem.cH - Elem.eCM, Elem.WinS - Elem.cW*3 - Elem.eCM, Elem.cW*2 + Elem.eCM };
-	private final int[] anchorY =
-	{ 0, Elem.cW*2 + Elem.eCM, Elem.cW*2 + Elem.eCM, Elem.WinS - Elem.cW*2 - Elem.cH - Elem.eCM, Elem.WinS - Elem.cW*3 - Elem.eCM };
-	private final int[][] seat2menfonn = { {0}, {0, 1, 2, 3, 4}, {0, 4, 1, 2, 3}, {0, 3, 4, 1, 2}, {0, 2, 3, 4, 1} };
-	
-	private Dashboard calcLayer;
-	private CenterBlock info;
-	private JPanel cardLayer;
-	private JLabel signHonba;
-	private JLabel signRichi;
-	private JDialog dialog;
-	private int currentOya;
-	private int seatMapping;
-	public static React[] reaction = new React[5];	// 玩家做出的行動
-	public static Player[] player = new Player[5];
-	public static boolean[]     isAI = { false, false,  true,  true,  true };	// 要不要讓AI打
-	public static boolean[] showFuda = { false,  true, false, false, false };	// 要不要顯示手牌
-	
-	/* 以下static變數是每位玩家都可以知道的資訊 */
-	public static int PlayerNum;	// 玩家數量
-	public static int tableHonba;	// 桌面本場棒
-	public static int tableRichi;	// 桌面點棒
-	public static int remainCard;	// 剩餘牌數
-	public static int allLast;		// 0-結束 1-AllLast 2-還早
-	public static boolean[] ippatsu;	// 玩家目前是不是一發
-	public static boolean calcLocal;	// 是否計算地方役
-	public static boolean suukansanra;	// 是否達成四槓散了條件
-	public static boolean restartable;	// 可不可以重新此局
-	public static int currentBakaze;	// 當前場風
-	public static int currentPlayer;	// 當前玩家ID
-	public static int[]         pts;	// 玩家的點數
-	public static int[] kantsuCount;	// 槓子數 [0]全部 [1~4]各家
-	public static int[][] appearance;	// 目前出現過的牌數量(包含懸賞指示牌)
-	public static int duration;	// 玩的局數(開始程式時的選項)
-	
-	public Game(String inputName, boolean l, int p, int d) {
-		calcLocal = l;
-		PlayerNum = p;
-		duration = d;
-		JLayeredPane layeredPane = new JLayeredPane();
-		this.setLayeredPane(layeredPane);
-		this.setTitle("\u30cb\u30bb\u5929\u9cf3");
-		this.setSize(Elem.WinS + 6, Elem.WinS + 27 + Elem.hCtrlSize);
-		this.setResizable(false);
-		this.setLocationRelativeTo(null);
-		this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		
-		JLabel wallpaper = new JLabel(Elem.createBackground(Color.GRAY, Elem.WinS, Elem.WinS + Elem.hCtrlSize));
-		wallpaper.setBounds(0, 0, Elem.WinS, Elem.WinS + Elem.hCtrlSize);
-		wallpaper.setOpaque(true);
-		this.getRootPane().add(wallpaper);
-		
-		JPanel deskLayer = new JPanel(null);
-		deskLayer.setBounds(0, 0, Elem.WinS, Elem.WinS);
-		deskLayer.setOpaque(false);
-		layeredPane.add(deskLayer, JLayeredPane.DEFAULT_LAYER);
-		
-		signHonba = new JLabel(String.format("%2d", 0), Elem.signhPic, JLabel.CENTER);
-		signHonba.setFont(new Font(Font.SERIF, Font.BOLD, Elem.eAccuFont));
-		signHonba.setForeground(Color.WHITE);
-		signHonba.setBounds(Elem.WinC - Elem.ptsSW, Elem.WinC - Elem.eDice / 2 - Elem.ptsSH * 2, Elem.ptsSW * 2, Elem.ptsSH);
-		deskLayer.add(signHonba);
-		signRichi = new JLabel(String.format("%2d", 0), Elem.signrPic, JLabel.CENTER);
-		signRichi.setFont(new Font(Font.SERIF, Font.BOLD, Elem.eAccuFont));
-		signRichi.setForeground(Color.WHITE);
-		signRichi.setBounds(Elem.WinC - Elem.ptsSW, Elem.WinC + Elem.eDice / 2 + Elem.ptsSH, Elem.ptsSW * 2, Elem.ptsSH);
-		deskLayer.add(signRichi);
-		
-		cardLayer = new JPanel(null);
-		cardLayer.setBounds(0, 0, Elem.WinS, Elem.WinS);
-		cardLayer.setOpaque(false);
-		layeredPane.add(cardLayer, JLayeredPane.PALETTE_LAYER);
-		layeredPane.add(info = new CenterBlock(), JLayeredPane.MODAL_LAYER);
-		
-		layeredPane.add(calcLayer = new Dashboard(), JLayeredPane.POPUP_LAYER);
-		layeredPane.add(player[1] = new Player(1, deskLayer, inputName), new Integer(259));
-		layeredPane.add(player[2] = new Player(2, deskLayer, "Com - 1"), new Integer(257));
-		layeredPane.add(player[3] = new Player(3, deskLayer, "Com - 2"), new Integer(255));
-		layeredPane.add(player[4] = new Player(4, deskLayer, "Com - 3"), new Integer(253));
-		
-		dialog = new JDialog(this, "");
-		dialog.setVisible(false);
-		allLast = 2;
-		currentBakaze = 1;
-		tableHonba = 0;
-		seatMapping = 1;
-		tableRichi = 0;
-		pts = new int[5];
-		Arrays.fill(pts, 25000);
-		KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(this);
-	}
-	
-	public void gameProgress(int startWind) {
-		currentOya = (((startWind & 1) == 1) ? startWind : (startWind ^ 6));
-		this.setVisible(true);
-		// Game Start
-		ArrayList<Card> deck = new ArrayList<Card>(136);
-		int[] cardNumber = { 1, 2, 3, 4, 6, 7, 8, 9 };
-		for (int j = 1; j < 8; ++j) {
-			deck.add(new Card(0, j));
-			deck.add(new Card(0, j));
-			deck.add(new Card(0, j));
-			deck.add(new Card(0, j));
-		}
-		for (int i = 1; i < 4; ++i) {
-			for (int j: cardNumber) {
-				deck.add(new Card(i, j));
-				deck.add(new Card(i, j));
-				deck.add(new Card(i, j));
-				deck.add(new Card(i, j));
-			}
-			deck.add(new Card(i, 0));
-			deck.add(new Card(i, 5));
-			deck.add(new Card(i, 5));
-			deck.add(new Card(i, 5));
-		}
-		do {
-			eachRound(deck);
-			System.out.println("new round");
-		} while ((pts[1] >= 0) && (pts[2] >= 0) && (pts[3] >= 0) && (pts[4] >= 0) && (allLast > 0));
-		
-		// Game Over
-		JLayeredPane layeredPane = this.getLayeredPane();
-		layeredPane.removeAll();
-		player[Elem.seq[startWind + 0]].cumux = pts[Elem.seq[startWind + 0]] + 4;
-		player[Elem.seq[startWind + 1]].cumux = pts[Elem.seq[startWind + 1]] + 3;
-		player[Elem.seq[startWind + 2]].cumux = pts[Elem.seq[startWind + 2]] + 2;
-		player[Elem.seq[startWind + 3]].cumux = pts[Elem.seq[startWind + 3]] + 1;
-		Arrays.sort(player, 1, 5);
-		
-		float[] floating = new float[5];
-		pts[player[1].PID] += tableRichi * 1000;
-		boolean even = (pts[player[1].PID] == pts[player[2].PID]);
-		floating[1] = pts[player[1].PID] - 30000 + (even ? 30000 : 40000);
-		floating[2] = pts[player[2].PID] - 30000 + (even ? 20000 : 10000);
-		floating[3] = pts[player[3].PID] - 30000 - 10000;
-		floating[4] = pts[player[4].PID] - 30000 - 20000;
-		
-		final Font finalFont = new Font(Font.SANS_SERIF, Font.BOLD, Elem.pNakuFont);
-		JLabel[] namelb = new JLabel[5];
-		JLabel[] ending = new JLabel[5];
-		JLabel[] points = new JLabel[5];
-		ending[0] = new JLabel("\u7D42\u3000\u5C40", JLabel.CENTER);
-		ending[0].setFont(new Font(Font.MONOSPACED, Font.BOLD, Elem.rTokuFont));
-		ending[0].setForeground(Color.WHITE);
-		ending[0].setBounds(Elem.WinC - Elem.eFinSizeW / 2, Elem.eFinSizeH, Elem.eFinSizeW, Elem.eFinSizeH);
-		layeredPane.add(ending[0], JLayeredPane.POPUP_LAYER);
-		for (int i = 1; i < 5; ++i) {
-			namelb[i] = new JLabel(player[i].name, JLabel.LEFT);
-			namelb[i].setFont(finalFont);
-			namelb[i].setForeground(Color.WHITE);
-			namelb[i].setBounds(Elem.WinC - Elem.eFinSizeW / 2, Elem.eFinSizeH * (1 + i), Elem.eFinSizeW, Elem.eFinSizeH);
-			layeredPane.add(namelb[i], JLayeredPane.MODAL_LAYER);
-			ending[i] = new JLabel(String.format("%7d", pts[player[i].PID]), JLabel.CENTER);
-			ending[i].setFont(finalFont);
-			ending[i].setForeground(Color.WHITE);
-			ending[i].setBounds(Elem.WinC - Elem.eFinSizeW / 2, Elem.eFinSizeH * (1 + i), Elem.eFinSizeW, Elem.eFinSizeH);
-			layeredPane.add(ending[i], JLayeredPane.MODAL_LAYER);
-			points[i] = new JLabel(String.format("%+6.1f", floating[i] / 1000), JLabel.RIGHT);
-			points[i].setFont(finalFont);
-			points[i].setForeground((floating[i] >= 0) ? Color.CYAN : Color.RED);
-			points[i].setBounds(Elem.WinC - Elem.eFinSizeW / 2, Elem.eFinSizeH * (1 + i), Elem.eFinSizeW, Elem.eFinSizeH);
-			layeredPane.add(points[i], JLayeredPane.MODAL_LAYER);
-		}
-		
-		JButton endb = new JButton("<<< END >>>");
-		endb.setFont(finalFont);
-		endb.setForeground(Color.PINK);
-		endb.setBounds(Elem.WinC - 200, Elem.WinS - 200, 400, 100);
-		endb.setContentAreaFilled(false);
-		endb.setFocusable(false);
-		endb.addActionListener(this);
-		layeredPane.add(endb, JLayeredPane.PALETTE_LAYER);
-		layeredPane.repaint();
-		return;
-	}
-	
-	private final int RULESUFON = 1000;
-	private final int RULESUCHA = 1100;
-	private final int RULESUKAN = 1200;
-	
-	private void eachRound(ArrayList<Card> deck) {
-		if ((seatMapping == PlayerNum) && (currentBakaze == duration))
-			allLast = 1;
-		ippatsu = new boolean[5];
-		kantsuCount = new int[5];
-		appearance = new int[4][10];
-		
-		signHonba.setText(String.format("%2d", tableHonba));
-		signRichi.setText(String.format("%2d", tableRichi));
-		info.hideInfo();
-		info.updatePoints();
-		for (int i = 1; i < 5; ++i)
-			player[i].resetPlayer(seat2menfonn[currentOya][i]);
-		
-		restartable = true;
-		suukansanra = false;
-		currentPlayer = currentOya;
-		int startIndex = info.diceRandom();
-		// 洗牌
-		Collections.shuffle(deck);
-		// 是否配牌
-		if (false) {
-			boolean cheatSuccess = true;
-			for (Card c: deck)	c.owner = -1;
-			int[][] available = {{67, 4, 4, 4, 4, 4, 4, 4, 0, 0 },
-								{  1, 4, 4, 4, 4, 3, 4, 4, 4, 4 },
-								{  1, 4, 4, 4, 4, 3, 4, 4, 4, 4 },
-								{  1, 4, 4, 4, 4, 3, 4, 4, 4, 4 }};
-			final int[] sequence = { 0, 1, 2, 3,16,17,18,19,32,33,34,35,48,52,
-									 4, 5, 6, 7,20,21,22,23,36,37,38,39,49,
-									 8, 9,10,11,24,25,26,27,40,41,42,43,50,
-									12,13,14,15,28,29,30,31,44,45,46,47,51,
-									134,135,132,133,130,131,128,129,126,127,124,125,122,123};
-			int[] specifiedOrder = new int[136];
-			try (Scanner scanner = new Scanner(new java.io.File("cheat.txt"), "utf-8")) {
-				for (int s: sequence) {
-					int x = s + startIndex;
-					int i = scanner.nextInt();
-					cheatSuccess &= (--available[i / 10][i % 10]) >= 0;
-					specifiedOrder[(x > 135) ? (x - 136) : x] = i;
-				}
-			} catch (Exception ex) {
-				cheatSuccess = false;
-			}
-			if (cheatSuccess) {
-				for (int i = 0; i < 136; ++i)
-					if (specifiedOrder[i] != 0) {
-						for (int j = 0; j < 136; ++j) {
-							if (deck.get(j).cpath == specifiedOrder[i] && deck.get(j).owner == -1) {
-								deck.get(j).owner = 0;
-								Collections.swap(deck, j, i);
-								break;
-							}
-						}
-					}
-			} else
-				System.out.println("Wrong or Illegal format in cheat.txt");
-		}
-		for (ListIterator<Card> it = deck.listIterator(); it.hasNext(); ) {
-			int i = it.nextIndex();
-			int j = (i / 34) + 1;
-			int k = (i % 34) / 2;
-			it.next().setAsYama(cardLayer, j, anchorX[j] + unitX[j] * k, anchorY[j] + unitY[j] * k);
-		}
-		// GUI嶺上牌
-		Collections.swap(deck, startIndex - 1, startIndex - 2);
-		Collections.swap(deck, startIndex - 3, startIndex - 4);
-		// 牌山
-		LinkedList<Card> yama = new LinkedList<Card>();
-		for (ListIterator<Card> it = deck.listIterator(startIndex); it.hasPrevious(); yama.add(it.previous()))	;
-		for (ListIterator<Card> it = deck.listIterator(deck.size()); yama.size() < 136; yama.add(it.previous()));
-		calcLayer.doraSetup(yama);
-		calcLayer.doraOpen();
-		cardLayer.repaint();
-		// 發牌
-		try {
-			Thread.sleep(640);
-			for (int i = 0; i < 4; ++i) {
-				for (int j = currentOya; j < currentOya + 4; ++j) {
-					for (int k = 0; k < ((i < 3) ? 4 : 1); k++)
-						player[Elem.seq[j]].distribute(yama.removeLast());
-					Thread.sleep(120);
-				}
-			}
-			remainCard = (PlayerNum == 4) ? 70 : 55;
-			Thread.sleep(720);
-		} catch (InterruptedException ie) {}
-		
-		player[1].sortFuda();
-		player[2].sortFuda();
-		player[3].sortFuda();
-		player[4].sortFuda();
-		info.showInfo();
-		kantsuCount[0] = 0;
-		int  endByRule = 0;
-		int drawStatus = 0;
-		boolean  turnEnded = false;
-		boolean kanPending = false;
-		Arrays.fill(reaction, React.doNothing);
-		do {
-			info.changeIcon(currentOya, currentPlayer);
-			// 四風連打
-			if (restartable && (remainCard == (((PlayerNum == 4) ? 66 : 51)))) {
-				if ((player[1].firstKawa() & player[2].firstKawa() & player[3].firstKawa() & player[4].firstKawa()) != 0) {
-					endByRule = RULESUFON;
-					break;
-				}
-				restartable = false;
-			}
-			// 本人回合的動作
-			switch (drawStatus) {
-				case 0:	// 正常
-					--remainCard;
-					player[currentPlayer].drawCard(yama.removeLast(), false);
-					player[currentPlayer].selfdecide();
-					break;
-				case 1:	// 吃碰後捨牌
-					player[currentPlayer].chiponDiscard();
-					break;
-				case 2:	// 加槓、開槓
-					kanPending = true;
-					--remainCard;
-					player[currentPlayer].drawCard(yama.removeFirst(), true);
-					player[currentPlayer].selfdecide();
-					break;
-				case 3:	// 暗槓 直接開dora
-					calcLayer.doraOpen();
-					kanPending = false;
-					--remainCard;
-					player[currentPlayer].drawCard(yama.removeFirst(), true);
-					player[currentPlayer].selfdecide();
-					break;
-			}
-			drawStatus = 0;
-			
-			React cp = reaction[currentPlayer];
-			switch (cp.kind) {
-				case React.PASSS:
-				case React.KIRII:
-					ippatsu[currentPlayer] = false;
-					break;
-				case React.RICHI:
-					ippatsu[currentPlayer] = true;
-					player[cp.who].actionLabel.action(5);
-					player[currentPlayer].doRichiAction();
-					cp = reaction[currentPlayer];
-					break;
-				case React.ANKAN:
-					ippatsu[currentPlayer] = false;
-					player[cp.who].actionLabel.action(2);
-					Arrays.fill(reaction, React.doNothing);
-					drawStatus = 3;
-					restartable = false;
-					turnEnded |= checkChankan(player[currentPlayer].doAnkan(cp), true);
-					break;
-				case React.KAKAN:
-					player[cp.who].actionLabel.action(2);
-					Arrays.fill(reaction, React.doNothing);
-					drawStatus = 2;
-					turnEnded |= checkChankan(player[currentPlayer].doKakan(cp), false);
-					break;
-				case React.TSUMO:
-					player[cp.who].actionLabel.action(4);
-				case React.NAGAS:
-					turnEnded = true;
-			}
-			if (turnEnded)	break;
-			// 有人槓牌且沒人搶槓的話就不必考慮其他人的反應
-			if (drawStatus != 0) {
-				if (kanPending) {
-					kanPending = false;
-					calcLayer.doraOpen();
-				}
-				continue;
-			}
-			if (kanPending) {
-				kanPending = false;
-				calcLayer.doraOpen();
-			}
-			Arrays.fill(reaction, React.doNothing);
-			player[currentPlayer].doThrowCard(cp);
-			
-			// 他人回合的回應
-			Arrays.sort(reaction, 1, 5);
-			final React ra = reaction[1];
-			if (ra.kind == React.RONNN) {
-				for (int i = 1; i <= PlayerNum; ++i)
-					if (reaction[i].kind == React.RONNN)
-						player[reaction[i].who].actionLabel.action(3);
-				break;
-			}
-			// 第四個槓發生後如果沒自摸沒搶槓、打出後沒人和牌 == 四槓散了
-			if (suukansanra) {
-				endByRule = RULESUKAN;
-				break;
-			}
-			// 立直後扣點
-			if (cp.kind == React.RICHI) {
-				player[currentPlayer].richibou.richiSenkoku();
-				pts[currentPlayer] -= 1000;
-				signRichi.setText(String.format("%2d", ++tableRichi));
-				info.updatePoints();
-			}
-			// 四家立直
-			if (player[1].richied() && player[2].richied() && player[3].richied() && player[4].richied()) {
-				endByRule = RULESUCHA;
-				break;
-			}
-			
-			switch (ra.kind) {
-				case React.CHII3:
-				case React.CHII2:
-				case React.CHII1:
-					player[ra.who].actionLabel.action(0);
-					player[currentPlayer].nakareru();
-					player[ra.who].doChiPon(ra);
-					drawStatus = 1;
-					break;
-				case React.PONNN:
-					player[ra.who].actionLabel.action(1);
-					player[currentPlayer].nakareru();
-					player[ra.who].doChiPon(ra);
-					drawStatus = 1;
-					break;
-				case React.KANNN:
-					player[ra.who].actionLabel.action(2);
-					player[currentPlayer].nakareru();
-					player[ra.who].doMinkan(ra);
-					drawStatus = 2;
-					break;
-			}
-			
-			// 如果有人叫牌則變成他的回合
-			if (ra.kind == React.PASSS) {
-				currentPlayer = ((currentPlayer == PlayerNum) ? 1 : (currentPlayer + 1));
-			} else {
-				restartable = false;
-				Arrays.fill(ippatsu, false);
-				currentPlayer = ra.who;
-			}
-		} while (!turnEnded && (remainCard > 0));
-		try { Thread.sleep(1536); } catch (InterruptedException ie) {}
-		
-		boolean renchan = false;
-		if ((endByRule != 0) || (reaction[3].kind == React.RONNN)) {
-			// 如果有三人和牌 == 流局
-			switch (endByRule) {
-				case RULESUCHA:
-					calcLayer.printSpecial("\u56DB\u3000\u5BB6\u3000\u7ACB\u3000\u76F4");	break;
-				case RULESUFON:
-					calcLayer.printSpecial("\u56DB\u3000\u98A8\u3000\u9023\u3000\u6253");	break;
-				case RULESUKAN:
-					calcLayer.printSpecial("\u56DB\u3000\u69D3\u3000\u6563\u3000\u4E86");	break;
-				case 0:
-					for (int i = 1; i <= PlayerNum; ++i)
-						if (i != currentPlayer)
-							player[currentPlayer].openFuda();
-					calcLayer.printSpecial("\u4e09\u3000\u3000\u5bb6\u3000\u3000\u548c");	break;
-			}
-			renchan = true;
-			++tableHonba;
-		} else if (reaction[1].kind == React.RONNN) {
-			calcLayer.printAgari(player[reaction[1].who], false);
-			renchan |= (player[reaction[1].who].isOya());
-			if (reaction[2].kind == React.RONNN) {
-				calcLayer.printAgari(player[reaction[2].who], false);
-				renchan |= (player[reaction[2].who].isOya());
-			}
-			tableHonba = renchan ? (tableHonba + 1) : 0;
-		} else if (reaction[currentPlayer].kind == React.TSUMO) {
-			calcLayer.printAgari(player[currentPlayer], true);
-			if (player[currentPlayer].isOya()) {
-				renchan = true;
-				++tableHonba;
-			} else
-				tableHonba = 0;
-		} else if (reaction[1].kind == React.CHANK) {
-			int ronCount = 1;
-			if (reaction[2].kind == React.CHANK)	++ronCount;
-			if (reaction[3].kind == React.CHANK)	++ronCount;
-			for (int i = 1; i <= ronCount; ++i) {
-				calcLayer.printAgari(player[reaction[i].who], false);
-				renchan |= (player[reaction[i].who].isOya());
-			}
-			tableHonba = renchan ? (tableHonba + 1) : 0;
-		} else if (remainCard == 0) {
-			calcLayer.printNagashi();
-			renchan = player[currentOya].isTenpai();
-			++tableHonba;
-		} else if (reaction[1].kind == React.NAGAS) {
-			player[currentPlayer].openFuda();
-			calcLayer.printSpecial("\u4E5D\u3000\u7A2E\u3000\u4E5D\u3000\u724C");
-			renchan = true;
-			++tableHonba;
-		} else {
-			System.out.println("** Unknown END **");
-		}
-		
-		if (renchan) {
-			if (allLast == 1)	allLast = allLastTest(30001, false);
-		} else {
-			if (allLast == 1)	allLast = allLastTest(30001,  true);
-			currentOya = (currentOya == PlayerNum) ? 1 : (currentOya + 1);
-			++seatMapping;
-			if (seatMapping == PlayerNum + 1) {
-				seatMapping = 1;
-				++currentBakaze;
-			}
-		}
-		cardLayer.removeAll();
-		return;
-	}
-	
-	// 如果是暗槓則必須役滿才可以叫牌
-	private boolean checkChankan(Card tar, boolean needYakuman) {
-		tar.testChankan(needYakuman);
-		boolean somebodyChankan = false;
-		for (int i = 1; i <= PlayerNum; ++i)
-			somebodyChankan |= (reaction[i].kind == React.CHANK);
-		if (somebodyChankan)	Arrays.sort(reaction, 1, 5);
-		return somebodyChankan;
-	}
-	
-	private int allLastTest(final int limit, boolean renchan) {
-		if (currentBakaze > duration + 1)
-			return 0;
-		if ((pts[1] < limit) && (pts[2] < limit) && (pts[3] < limit) && (pts[4] < limit))
-			return 1;
-		if (renchan)
-			return 0;
-		switch (currentOya) {
-			case 1:
-			return ((pts[1] > pts[2] && pts[1] > pts[3] && pts[1] > pts[4]) ? 0 : 1);
-			case 2:
-			return ((pts[2] > pts[1] && pts[2] > pts[3] && pts[2] > pts[4]) ? 0 : 1);
-			case 3:
-			return ((pts[3] > pts[1] && pts[3] > pts[2] && pts[3] > pts[4]) ? 0 : 1);
-			case 4:
-			return ((pts[4] > pts[1] && pts[4] > pts[2] && pts[4] > pts[3]) ? 0 : 1);
-		}
-		return 0;
-	}
-	
-	// GUI遊戲結束按鈕行為
-	public void actionPerformed(ActionEvent e) {
-		this.dispose();
-		return;
-	}
-	
-	/* 此部分為除錯用、觀看玩家who的資訊 ========================================================== */
-	public void showInfo(int who) {
-		String insText = "<html>\u2190 hold<br />avail \u2192</html>";
-		dialog = new JDialog(this, "information: PID" + who);
-		JPanel contentPane = new JPanel(new BorderLayout());
-		contentPane.add(player[who].cheatShowBlock(true), BorderLayout.LINE_START);
-		contentPane.add(player[who].cheatShowBlock(false),  BorderLayout.LINE_END);
-		contentPane.add(player[who].cheatShowFuda(), BorderLayout.PAGE_END);
-		contentPane.add(new JLabel(insText, JLabel.CENTER), BorderLayout.CENTER);
-		contentPane.setOpaque(true);
-		dialog.setContentPane(contentPane);
-		dialog.setSize(new Dimension(360, 180));
-		dialog.setLocationRelativeTo(this);
-		dialog.setVisible(true);
-		this.requestFocus();
-		return;
-	}
-	
-	// 使用按鍵1~4
-	public boolean dispatchKeyEvent(KeyEvent e) {
-		if (e.getID() != KeyEvent.KEY_PRESSED)
-			return true;
-		dialog.setVisible(false);
-		switch (e.getKeyCode()) {
-			case KeyEvent.VK_1:
-				showInfo(1);
-				break;
-			case KeyEvent.VK_2:
-				showInfo(2);
-				break;
-			case KeyEvent.VK_3:
-				showInfo(3);
-				break;
-			case KeyEvent.VK_4:
-				showInfo(4);
-				break;
-		}
-		return true;
-	}
-	/* ====================================================================================== */
-	
-	// GUI中間的座位及場況資訊
-	class CenterBlock extends JPanel {
-		private final Font diceFont = new Font(Font.SANS_SERIF, Font.BOLD, Elem.eDiceFont);
-		private final Font infoFont = new Font(Font.SANS_SERIF, Font.BOLD, Elem.eInfoFont);
-		private final Font lifeFont = new Font(Font.SERIF, Font.BOLD, Elem.pLifeFont);
-		private final int labelSize = Elem.pLifeFont + 4;
-		private final char[] cInfo1 = { 'y', '\u6771', '\u5357', '\u897f', '\u5317' };
-		private final char[] cInfo2 = { 'a', '\u2160', '\u2161', '\u2162', '\u2163' };
-		private final JLabel[] ptsLabel;
-		private final JLabel seat;
-		private final JLabel cube;
-		
-		public CenterBlock() {
-			this.setLayout(null);
-			this.setOpaque(false);
-			this.setBounds(Elem.WinC - (Elem.eSeats >> 1), Elem.WinC - (Elem.eSeats >> 1), Elem.eSeats, Elem.eSeats);
-			this.setVisible(true);
-			seat = new JLabel();
-			seat.setVisible(false);
-			seat.setBounds(0, 0, Elem.eSeats, Elem.eSeats);
-			this.add(seat);
-			cube = new JLabel("", JLabel.CENTER);
-			cube.setVisible(true);
-			cube.setBounds((Elem.eSeats - Elem.eDice) >> 1, (Elem.eSeats - Elem.eDice) >> 1, Elem.eDice, Elem.eDice);
-			this.add(cube);
-			ptsLabel = new JLabel[5];
-			for (int i = 1; i <= PlayerNum; ++i) {
-				ptsLabel[i] = new JLabel("", JLabel.CENTER);
-				ptsLabel[i].setFont(lifeFont);
-				ptsLabel[i].setForeground(Color.WHITE);
-				ptsLabel[i].setSize(Elem.eSeats, labelSize);
-				this.add(ptsLabel[i]);
-			}
-			ptsLabel[1].setLocation(0,  Elem.eSeats - labelSize - Elem.ptsH);
-			ptsLabel[2].setLocation(0, (Elem.eSeats - labelSize) >> 1);
-			ptsLabel[2].setHorizontalAlignment(JLabel.RIGHT);
-			ptsLabel[3].setLocation(0, Elem.ptsH);
-			ptsLabel[4].setLocation(0, (Elem.eSeats - labelSize) >> 1);
-			ptsLabel[4].setHorizontalAlignment(JLabel.LEFT);
-		}
-		
-		public int diceRandom() {
-			cube.setText("?");
-			cube.setFont(diceFont);
-			cube.setForeground(Color.ORANGE);
-			try { Thread.sleep(600); } catch (InterruptedException ie) {}
-			int diceValue = (int)(Math.random() * 6) + (int)(Math.random() * 6) + 2;
-			cube.setText(Integer.toHexString(diceValue).toUpperCase());
-			return ((takeS[diceValue % 4 + currentOya] + 2 * diceValue) % 136);
-		}
-		
-		public void hideInfo() {
-			seat.setVisible(false);
-			return;
-		}
-		
-		public void updatePoints() {
-			for (int i = 1; i <= PlayerNum; ++i)
-				ptsLabel[i].setText(String.format("   %d   ", pts[i]));
-			return;
-		}
-		
-		public void showInfo() {
-			seat.setVisible(true);
-			cube.setVisible(false);
-			cube.setFont(infoFont);
-			cube.setForeground((allLast == 2) ? Color.YELLOW : Color.MAGENTA);
-			cube.setText(String.format("<html>%c<br />%c</html>", cInfo1[currentBakaze], cInfo2[seatMapping]));
-			cube.setVisible(true);
-			return;
-		}
-		
-		public void changeIcon(int currentOya, int currentPlayer) {
-			seat.setIcon(Elem.seatPic[currentOya][currentPlayer]);
-			return;
-		}
-		
-	}
-	
+abstract class Game {
+    enum EndReason {
+        TSUMO   (false, false, ""),
+        RON_1   (false, false, ""),
+        RON_2   (false, false, ""),
+        HOWANPAI(false, true,  "流　　　局"),
+        KIND9  (true,  true,  "九　種　九　牌"),
+        FUU_4   (true,  true,  "四　風　連　打"),
+        RICHI_4 (true,  true,  "四　家　立　直"),
+        KAN_4   (true,  true,  "四　槓　散　了"),
+        RON_3   (true,  true,  "三　　家　　和");
+        
+        public final boolean midgameEnd;
+        public final boolean increaseBonba;
+        public final String text;
+        
+        private EndReason(boolean e, boolean ib, String t) {
+            midgameEnd = e;
+            increaseBonba = ib;
+            text = t;
+        }
+        
+    }
+    
+    enum RoundPhase {
+        NORMAL_DRAW_DISCARD(false, false),
+        ANKAN_DRAW_DISCARD (true,  false),
+        KAN_DRAW_DISCARD   (true,  false),
+        RICHI_DISCARD      (false, false),
+        CHIPON_DISCARD     (false, false),
+        NORMAL_REACT       (false, false),
+        ANKAN_REACT        (false, true),
+        KAKAN_REACT        (false, true);
+        
+        public final boolean rinshanable;
+        public final boolean chankanable;
+        
+        private RoundPhase(boolean r, boolean c) {
+            rinshanable = r;
+            chankanable = c;
+        }
+        
+    }
+    
+    private static Game currentGameInstance = null;
+    private static final HashMap<String, Integer> gameInfo = new HashMap<>(16);
+    public  static final int[] SEQUENCE = { 4, 1, 2, 3, 4, 1, 2, 3 };
+    private static final int[] dealCardArray = {
+        0, 1, 2, 3, // deal 3 tiles
+        0, 1, 2, 3, // deal 3 tiles
+        0, 1, 2, 3, // deal 3 tiles
+        0, 1, 2, 3, // deal 1 tiles
+        0
+    };
+    
+    protected final Player[] player;
+    protected final LinkedList<Card> yama;
+    protected final int bafuu;
+    protected final int shibariBase;
+    protected final int oyaSeat;
+    protected int richibouOnTable;
+    protected int[][] appearance = new int[4][10];  // 場上已知出現牌數
+    protected boolean restartable = true;
+    protected RoundPhase phase = RoundPhase.NORMAL_DRAW_DISCARD;
+    protected Player cp = null; // CurrentPlayer
+    
+    private final boolean[] richiPending = new boolean[5];
+    private final int[] kantsuCount = new int[5];
+    private final List<ReactManager> managerList = new ArrayList<>(3);
+    private final List<Card> doraList = new ArrayList<>(10);
+    private int doraCount = 0;
+    private int dealCardIndex = 0;
+    private boolean gameRenchan;// set right before returning from startRound()
+    private EndReason endReason;//   and used in calculate() & updateGameInfo()
+    
+    /** 處理其他玩家對當前玩家丟牌或槓牌的反應
+        於constructor記下玩家(who)及可執行的最高優先度行動種類(priority)
+        玩家真正決定行動後會執行setReact並通知processReact進行判斷
+    */
+    final class ReactManager implements Comparable<ReactManager> {
+        private final React.Type priority;  // 最高優先度潛力
+        private final Player who;
+        private React dicision = React.defaultPass;
+        private boolean done = false;
+        
+        public ReactManager(Player p, List<React> reactList) {
+            priority = reactList.get(0).type;
+            who = p;
+        }
+        
+        public void decide(AtomicInteger counter, React ra) {
+            dicision = ra;
+            done = true;
+            synchronized (counter) {
+                counter.decrementAndGet();
+                counter.notify();
+            }
+            return;
+        }
+        
+        public boolean hasPrivilege(ReactManager o) {
+            return done && (this == o ||
+                dicision.type.compareTo(o.done ? o.dicision.type : o.priority) < 0);
+        }
+        
+        @Override
+        public int compareTo(ReactManager o) {
+            return dicision.compareTo(o.dicision);
+        }
+        
+    }
+    
+    /** 當某玩家做出的決定足以優先過其他玩家的決定便可中斷其他玩家思考 */
+    private SimpleEntry<Player, React> waitNext(AtomicInteger counter,
+            ThreadGroup managerThreadGroup, RoundPhase nextRoundPhase) {
+    THINKING_LOOP:
+        while (counter.get() > 0) {
+            synchronized (counter) {
+                try {
+                    counter.wait(500);
+                } catch (Exception ouch) {
+                    ouch.printStackTrace();
+                }
+            }
+            int size = managerList.size();
+            for (ReactManager p: managerList) {
+                int inturruptRequirement = size;
+                for (ReactManager q: managerList) {
+                    if (p.hasPrivilege(q))
+                        --inturruptRequirement;
+                }
+                if (inturruptRequirement == 0) {
+                    managerThreadGroup.interrupt();
+                    counter.set(0);
+                    break THINKING_LOOP;
+                }
+            }
+        }
+        phase = nextRoundPhase;
+        managerList.sort(null);
+        React ra = managerList.isEmpty() ?
+                   React.defaultPass : managerList.get(0).dicision;
+        if (ra.type == React.Type.PASS) {
+            return new SimpleEntry<>(
+                phase == RoundPhase.NORMAL_DRAW_DISCARD ?
+                         player[SEQUENCE[cp.seat + 1]] : cp,
+                React.defaultPass);
+        }
+        if (ra.type == React.Type.RON) {
+            // 如果有玩家和牌、移除非和牌類型
+            managerList.removeIf(m -> m.dicision.type != React.Type.RON);
+        }
+        return new SimpleEntry<>(managerList.get(0).who, ra);
+    }
+    
+    /** called in FxApplicationThread */
+    protected Game(Player[] player, LinkedList<Card> shuffledYama) {
+        Player.game = currentGameInstance = this;
+        this.player = player;
+        yama = shuffledYama;
+        bafuu = gameInfo.get("bafuu");
+        shibariBase = gameInfo.get("shibariBase") +
+                 (gameInfo.get("bonba") > 4 ? gameInfo.get("shibariPlus") : 0);
+        oyaSeat = gameInfo.get("currOyaSeat");
+        richibouOnTable = gameInfo.get("richi");
+        cp = player[oyaSeat];
+        gameInfo.forEach((k ,v) -> System.out.printf(" * %s: %d%n", k, v));
+        
+        for (int i = 1; i <= 4; ++i) {
+            player[i].newRoundReset(SEQUENCE[(5 - oyaSeat + i) & 3]);
+        }
+        // doraList: [02468]UraDora [13579]OmoteDora
+        doraList.addAll(yama.subList(4, 14));
+    }
+    
+    protected final void dealCard() {
+        if (dealCardIndex < 12) {
+            int i = SEQUENCE[oyaSeat + dealCardArray[dealCardIndex]];
+            player[i].dealCard(yama.removeLast());
+            player[i].dealCard(yama.removeLast());
+            player[i].dealCard(yama.removeLast());
+            player[i].dealCard(yama.removeLast());
+        } else if (dealCardIndex < 16) {
+            int i = SEQUENCE[oyaSeat + dealCardArray[dealCardIndex]];
+            player[i].dealCard(yama.removeLast());
+        } else {
+            player[SEQUENCE[oyaSeat + 0]].sortFuda(true);
+            player[SEQUENCE[oyaSeat + 1]].sortFuda(true);
+            player[SEQUENCE[oyaSeat + 2]].sortFuda(true);
+            player[SEQUENCE[oyaSeat + 3]].sortFuda(true);
+        }
+        ++dealCardIndex;
+        return;
+    }
+    
+    protected final boolean isReadyToStart() {
+        return dealCardIndex == dealCardArray.length;
+    }
+    
+    protected final void startRound() {
+        flipDoraIndicator();
+        React react = null; // reused after Richi & ChiPon
+    PHASE_LOOP:
+        while (yama.size() > 14) {
+            
+            /** ======================== self side ======================== */
+            System.err.println("Phase1: " + phase);
+            switch (phase) {
+                case NORMAL_DRAW_DISCARD:
+                    react = cp.getDrawReact(cp.getDrawReactList(yama.removeLast()));
+                    break;
+                case ANKAN_DRAW_DISCARD:
+                    flipDoraIndicator();
+                    react = cp.getDrawReact(cp.getDrawReactList(yama.removeFirst()));
+                    break;
+                case KAN_DRAW_DISCARD:
+                    react = cp.getDrawReact(cp.getDrawReactList(yama.removeFirst()));
+                    flipDoraIndicator();
+                    break;
+                case RICHI_DISCARD:
+                    react = cp.getRichiReact(cp.getRichiReactList(react));
+                    richiPending[cp.seat] = true;
+                    break;
+                case CHIPON_DISCARD:
+                    react = cp.getChiponReact(cp.getChiponReactList(react));
+                    break;
+                default:
+                    System.err.println("Unexpected Phase1: " + phase);
+            }
+            
+            /** ======================== do action ======================== */
+            
+            switch (react.type) {
+                case KIND9:
+                    gameRenchan = true;
+                    endReason = EndReason.KIND9;
+                    return;
+                case TSUMO:
+                    gameRenchan = (cp.seat == oyaSeat);
+                    endReason = EndReason.TSUMO;
+                    return;
+                case KIRU:
+                case KRGR:
+                case TMGR:
+                    cp.discardCard(react);
+                    phase = RoundPhase.NORMAL_REACT;
+                    break;
+                case ANKAN:
+                    cp.doAnkan(react);
+                    phase = RoundPhase.ANKAN_REACT;
+                    break;
+                case KAKAN:
+                    cp.doKakan(react);
+                    phase = RoundPhase.KAKAN_REACT;
+                    break;
+                case RICHI:
+                    phase = RoundPhase.RICHI_DISCARD;
+                    continue PHASE_LOOP;
+                default:
+                    System.err.println("Unexpected SelfReact: " + react.type);
+            }
+            
+            /** ======================== else side ======================== */
+            System.err.println("Phase2: " + phase);
+            managerList.clear();
+            AtomicInteger counter = new AtomicInteger(0);
+            ThreadGroup managerTG = new ThreadGroup("mtg");
+            final Card focus = react.drop;
+            
+            SimpleEntry<Player, React> result = null;
+            switch (phase) {
+                case NORMAL_REACT:
+                    ++appearance[focus.vi][focus.vj];
+                    for (int i = 1; i <= 3; ++i) {
+                        Player p = player[SEQUENCE[cp.seat + i]];
+                        List<React> reactList = p.getNormalReactList(focus);
+                        if (reactList.size() == 1)  // pass
+                            continue;
+                        ReactManager rm = new ReactManager(p, reactList);
+                        managerList.add(rm);
+                        counter.incrementAndGet();
+                        new Thread(managerTG, () -> {
+                            rm.decide(counter, p.getNormalReact(reactList));
+                        }).start();
+                    }
+                    result = waitNext(counter, managerTG,
+                                      RoundPhase.NORMAL_DRAW_DISCARD);
+                    break;
+                case ANKAN_REACT:
+                    appearance[focus.vi][focus.vj] = 4;
+                    for (int i = 1; i <= 3; ++i) {
+                        Player p = player[SEQUENCE[cp.seat + i]];
+                        List<React> reactList = p.getChankanReactList(focus, false);
+                        if (reactList.size() == 1)  // pass
+                            continue;
+                        ReactManager rm = new ReactManager(p, reactList);
+                        managerList.add(rm);
+                        counter.incrementAndGet();
+                        new Thread(managerTG, () -> {
+                            rm.decide(counter, p.getChankanReact(reactList));
+                        }).start();
+                    }
+                    result = waitNext(counter, managerTG,
+                                      RoundPhase.ANKAN_DRAW_DISCARD);
+                    deIppatsu();
+                    break;
+                case KAKAN_REACT:
+                    appearance[focus.vi][focus.vj] = 4;
+                    for (int i = 1; i <= 3; ++i) {
+                        Player p = player[SEQUENCE[cp.seat + i]];
+                        List<React> reactList = p.getChankanReactList(focus, true);
+                        if (reactList.size() == 1)  // pass
+                            continue;
+                        counter.incrementAndGet();
+                        ReactManager rm = new ReactManager(p, reactList);
+                        managerList.add(rm);
+                        new Thread(managerTG, () -> {
+                            rm.decide(counter, p.getChankanReact(reactList));
+                        }).start();
+                    }
+                    result = waitNext(counter, managerTG,
+                                      RoundPhase.KAN_DRAW_DISCARD);
+                    deIppatsu();
+                    break;
+                default:
+                    System.err.println("Unexpected Phase2: " + phase);
+            }
+            
+            /** ========================== check ========================== */
+            
+            react = result.getValue();
+            if (react.type == React.Type.RON) {
+                gameRenchan = false;
+                for (ReactManager rm: managerList) {
+                    gameRenchan |= (rm.who == player[oyaSeat]);
+                }
+                endReason = (managerList.size() == 3) ? EndReason.RON_3 :
+                           ((managerList.size() == 2) ? EndReason.RON_2 :
+                                                        EndReason.RON_1);
+                return;
+            }
+            if (phase != RoundPhase.NORMAL_DRAW_DISCARD &&
+                    ++kantsuCount[cp.seat] < 4 &&
+                    ++kantsuCount[0] >= 4) {
+                gameRenchan = true;
+                endReason = EndReason.KAN_4;
+                return;
+            }
+            
+            /** ======================== do action ======================== */
+            
+            Player nextPlayer = result.getKey();
+            if (react.type != React.Type.PASS) {
+                deIppatsu();
+                cp.nakareru();
+                for (Card c: react.cardList) {
+                    ++appearance[c.vi][c.vj];
+                }
+                switch (react.type) {
+                    case KAN:
+                        nextPlayer.doKan(react);
+                        phase = RoundPhase.KAN_DRAW_DISCARD;
+                        break;
+                    case CHI:
+                    case PON:
+                        nextPlayer.doChipon(react);
+                        phase = RoundPhase.CHIPON_DISCARD;
+                        break;
+                    default:
+                        System.err.println("Unexpected ElseReact: " + react.type);
+                }
+            }
+            
+            /** ===================== result & update ===================== */
+            
+            if (richiPending[cp.seat]) {
+                richiPending[cp.seat] = false;
+                cp.doRichi();
+                increaseRichibou();
+                if (player[1].hasRichied() & player[2].hasRichied() &
+                    player[3].hasRichied() & player[4].hasRichied()) {
+                    gameRenchan = true;
+                    endReason = EndReason.RICHI_4;
+                    return;
+                }
+            } else {
+                player[cp.seat].ippatsu = false;
+            }
+            
+            if (restartable && yama.size() == 80) {// 136 - 13 * 4 - 4
+                if ((0b11110 & player[1].getKawaFirst() &
+                               player[2].getKawaFirst() &
+                               player[3].getKawaFirst() &
+                               player[4].getKawaFirst()) != 0) {
+                    gameRenchan = true;
+                    endReason = EndReason.FUU_4;
+                    return;
+                }
+                restartable = false;
+            }
+            
+            changeCurrentPlayer(nextPlayer);
+        }
+        gameRenchan = player[oyaSeat].isTenpai();
+        endReason = EndReason.HOWANPAI;
+        return;
+    }
+    
+    /** should be overridden for UI */
+    protected int increaseRichibou() {
+        return ++richibouOnTable;
+    }
+    
+    /** should be overridden for UI */
+    protected void changeCurrentPlayer(Player nextPlayer) {
+        cp = nextPlayer;
+        return;
+    }
+    
+    /** should be overridden for UI */
+    protected Card flipDoraIndicator() {
+        Card indicator = doraList.get(doraCount + 1);
+        ++appearance[indicator.vi][indicator.vj];
+        doraCount += 2;
+        return indicator;
+    }
+    
+    // someone calls for something
+    private final void deIppatsu() {
+        restartable = false;
+        player[1].ippatsu = false;
+        player[2].ippatsu = false;
+        player[3].ippatsu = false;
+        player[4].ippatsu = false;
+        return;
+    }
+    
+    protected final boolean richiable() {
+        return yama.size() > 18;
+    }
+    
+    protected final boolean kanable() {
+        return yama.size() > 14 && kantsuCount[0] < 4;
+    }
+    
+    protected final boolean lastCard() {
+        return yama.size() == 14;
+    }
+    
+    /** 計算本局結果、會更新player.point
+        可以兩家和牌、故使用List
+        @return 流局方式標題
+                空字串表示有和牌
+            @result     非中途流局狀況才會有物件
+                @key    此次和牌役種、或Analyze.EMPTY表示流局
+                @value  本局各家點數變化、其中index0為桌面上的立直棒數量
+            @finalDoraList 前半為ドラ、後半為裏ドラ
+    */
+    protected final String scoring(
+                List<SimpleEntry<Analyze.Bunkai, int[]>> result,
+                List<Card> finalDoraList) {
+        if (endReason.midgameEnd) {
+            return endReason.text;
+        }
+        int[] diff = new int[] { richibouOnTable, 0, 0, 0, 0 };
+        if (endReason == EndReason.HOWANPAI) {
+            int tenpaiCount = 0;
+            List<Integer> nagaman = new ArrayList<>();
+            for (int i = 1; i <= 4; ++i) {
+                if (player[i].isTenpai()) {
+                    ++tenpaiCount;
+                    diff[i] = +1;
+                } else {
+                    diff[i] = -1;
+                }
+                if (player[i].isNagashimangan()) {
+                    nagaman.add(i);
+                }
+            }
+            if (nagaman.isEmpty()) {
+                if ((tenpaiCount & 3) == 0) {   // 0 or 4
+                    Arrays.fill(diff, 1, 5, 0);
+                } else {
+                    int add = 3000 / tenpaiCount;
+                    int sub = 3000 / (tenpaiCount - 4);
+                    for (int i = 1; i <= 4; ++i) {
+                        diff[i] = diff[i] > 0 ? add : sub;
+                        player[i].point += diff[i];
+                    }
+                }
+            } else {
+                Arrays.fill(diff, 1, 5, 0);
+                for (Integer i: nagaman) {
+                    if (i == oyaSeat) {
+                        diff[1] -= 4000;
+                        diff[2] -= 4000;
+                        diff[3] -= 4000;
+                        diff[4] -= 4000;
+                        diff[i] += 4000 + 12000;
+                    } else {
+                        diff[oyaSeat] -= 2000;
+                        diff[1] -= 2000;
+                        diff[2] -= 2000;
+                        diff[3] -= 2000;
+                        diff[4] -= 2000;
+                        diff[i] += 2000 + 8000;
+                    }
+                }
+                for (int i = 1; i <= 4; ++i) {
+                    player[i].point += diff[i];
+                }
+            }
+            result.add(new SimpleEntry<Analyze.Bunkai, int[]>(Analyze.EMPTY, diff));
+            return nagaman.isEmpty() ? endReason.text : "流　し　満　貫";
+        }
+        // remove nouse DoraIndicators
+        doraList.subList(doraCount, 10).clear();
+        for (int i = 1; i < doraCount; i += 2) {
+            finalDoraList.add(doraList.get(i));
+        }
+        for (int i = 0; i < doraCount; i += 2) {
+            finalDoraList.add(doraList.get(i));
+        }
+        // TODO: pao
+        if (endReason == EndReason.TSUMO) {
+            Analyze.Bunkai bunkai = cp.analyze.summarize(doraList);
+            int bonba = gameInfo.get("bonba") * 100;
+            int ratio = cp.seat == oyaSeat ? 2 : 1;
+            int basic = bunkai.getPoint();
+            for (int i = 1; i <= 3; ++i) {
+                int k = SEQUENCE[cp.seat + i];
+                int p = carry100(basic * (k == oyaSeat ? 2 : ratio)) + bonba;
+                diff[k] -= p;
+                diff[cp.seat] += p;
+            }
+            diff[cp.seat] += richibouOnTable * 1000;
+            richibouOnTable = 0;
+            for (int i = 1; i <= 4; ++i) {
+                player[i].point += diff[i];
+            }
+            result.add(new SimpleEntry<Analyze.Bunkai, int[]>(bunkai, diff));
+            return endReason.text;
+        }
+        int bonba = gameInfo.get("bonba") * 300;
+        for (ReactManager rm: managerList) {
+            Player op = rm.who;
+            Analyze.Bunkai bunkai = op.analyze.summarize(doraList);
+            int basic = bunkai.getPoint();
+            int whole = carry100(basic * (op.seat == oyaSeat ? 6 : 4)) + bonba;
+            bonba = 0;// calculate once
+            diff[cp.seat] -= whole;
+            diff[op.seat] += whole + richibouOnTable * 1000;
+            richibouOnTable = 0;
+            for (int i = 1; i <= 4; ++i) {
+                player[i].point += diff[i];
+            }
+            result.add(new SimpleEntry<Analyze.Bunkai, int[]>(bunkai, diff));
+            diff = new int[5];
+        }
+        return endReason.text;
+    }
+    
+    /** 更新各種資訊並回傳是否可繼續下一局遊戲、一定要在每局結束後呼叫一次 */
+    protected final boolean updateGameInfo() {
+        gameInfo.put("richi", richibouOnTable);
+        
+        for (int i = 1; i <= 4; ++i) {
+            if (player[i].point < 0)
+                return false;
+        }
+        if (onePassPointLimit()) {
+            int allLast = gameInfo.get("allLast");
+            if (allLast == 2)
+                return false;
+            if (allLast == 1 && oyaIsTheHighest())
+                return false;
+        }
+        gameInfo.put("bonba", (endReason.increaseBonba || gameRenchan) ?
+                               gameInfo.get("bonba") + 1 : 0);
+        if (!gameRenchan) {
+            int initOyaSeat = gameInfo.get("initOyaSeat");
+            int nextOyaSeat = SEQUENCE[oyaSeat + 1];
+            gameInfo.put("kyoku", gameInfo.get("kyoku") + 1);
+            
+            if (nextOyaSeat == initOyaSeat) {
+                gameInfo.put("kyoku", 1);
+                int nextBafuu = gameInfo.get("bafuu") + 1;// 不考慮東入
+                int gameLimit = gameInfo.get("totalLength") + 1;
+                if (nextBafuu > gameLimit)
+                    return false;
+                if (nextBafuu == gameLimit)
+                    gameInfo.put("allLast", 2);
+                gameInfo.put("bafuu", nextBafuu);
+            } else if (SEQUENCE[nextOyaSeat + 1] == initOyaSeat &&
+                       bafuu == gameInfo.get("totalLength")) {
+                gameInfo.put("allLast", 1);
+            }
+            gameInfo.put("currOyaSeat", nextOyaSeat);
+        }
+        return true;
+    }
+    
+    private final boolean oyaIsTheHighest() {
+        for (int i = 1; i <= 4; ++i) {
+            if (i != oyaSeat && player[i].point >= player[oyaSeat].point)
+                return false;
+        }
+        return true;
+    }
+    
+    private final boolean onePassPointLimit() {
+        for (int i = 1; i <= 4; ++i) {
+            if (player[i].point >= gameInfo.get("limitPoints"))
+                return true;
+        }
+        return false;
+    }
+    
+    protected static int carry100(int originalValue) {
+        return (originalValue + 99) / 100 * 100;
+    }
+    
+    /** 遊戲結束得點計算、會改動Player[]順序並回傳符合順序的double[] */
+    protected static double[] getFinalScore(Player[] pl) {
+        final int[][] SEAT_BONUS = new int[][] { { 0 },
+            { 0, 4, 3, 2, 1 },
+            { 0, 1, 4, 3, 2 },
+            { 0, 2, 1, 4, 3 },
+            { 0, 3, 2, 1, 4 }
+        };
+        final int initOyaSeat = gameInfo.get("initOyaSeat");
+        Arrays.sort(pl, 1, 5, (p, q) -> Integer.compare(
+            (q.point << 3) + SEAT_BONUS[initOyaSeat][q.seat],
+            (p.point << 3) + SEAT_BONUS[initOyaSeat][p.seat])
+        );
+        
+        pl[1].point += gameInfo.get("richi") * 1000;
+        int oka = gameInfo.get("oka");
+        boolean even12 = pl[1].point == pl[2].point;
+        double[] score = new double[] { 0,
+            pl[1].point + 20000 + (even12 ? oka / 2 : oka),
+            pl[2].point + 10000 + (even12 ? oka / 2 : 0),
+            pl[3].point - 10000,
+            pl[4].point - 20000
+        };
+        for (int i = 1; i <= 4; ++i) {
+            score[i] = Math.rint​((score[i] - gameInfo.get("limitPoints")) / 1000.0);
+        }
+        return score;
+    }
+    
+    protected static HashMap<String, Integer> getGameInfo(
+            int totalLength, int initOyaSeat,
+            int giveBackPts, int startPoints,
+            int shibariBase, int shibariPlus, int cheatEnabled) {
+        gameInfo.putIfAbsent("allLast", 0); // [0]Not [1]AllLast [2]SuddenDeath
+        gameInfo.putIfAbsent("bafuu", 1);
+        gameInfo.putIfAbsent("kyoku", 1);
+        gameInfo.putIfAbsent("bonba", 0);
+        gameInfo.putIfAbsent("richi", 0);
+        gameInfo.putIfAbsent("totalLength", totalLength);
+        gameInfo.putIfAbsent("currOyaSeat", initOyaSeat);
+        gameInfo.putIfAbsent("initOyaSeat", initOyaSeat);
+        gameInfo.putIfAbsent("shibariPlus", shibariPlus);
+        gameInfo.putIfAbsent("shibariBase", shibariBase);
+        gameInfo.putIfAbsent("limitPoints", startPoints + giveBackPts);
+        gameInfo.putIfAbsent("oka", giveBackPts * 4);
+        gameInfo.putIfAbsent("cheatEnabled", cheatEnabled);
+        gameInfo.putIfAbsent("cheatTakeIndex", 0);
+        return gameInfo;
+    }
+    
+    protected static Game getCurrentGame() {
+        return currentGameInstance;
+    }
+    
 }

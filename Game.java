@@ -578,10 +578,9 @@ abstract class Game {
                 return false;
         }
         if (onePassPointLimit()) {
-            int allLast = gameInfo.get("allLast");
-            if (allLast == 2)
+            if (gameInfo.get("allLast") == 1 && (oyaIsTheHighest() || !gameRenchan))
                 return false;
-            if (allLast == 1 && oyaIsTheHighest())
+            if (gameInfo.get("allLast") == 2)
                 return false;
         }
         gameInfo.put("bonba", (endReason.increaseBonba || gameRenchan) ?

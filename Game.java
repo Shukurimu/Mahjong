@@ -6,6 +6,8 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.io.OutputStream;
+import java.io.PrintWriter;
 
 abstract class Game {
     enum EndReason {
@@ -13,7 +15,7 @@ abstract class Game {
         RON_1   (false, false, ""),
         RON_2   (false, false, ""),
         HOWANPAI(false, true,  "流　　　局"),
-        KIND9  (true,  true,  "九　種　九　牌"),
+        KIND9   (true,  true,  "九　種　九　牌"),
         FUU_4   (true,  true,  "四　風　連　打"),
         RICHI_4 (true,  true,  "四　家　立　直"),
         KAN_4   (true,  true,  "四　槓　散　了"),
@@ -32,19 +34,21 @@ abstract class Game {
     }
     
     enum RoundPhase {
-        NORMAL_DRAW_DISCARD(false, false),
-        ANKAN_DRAW_DISCARD (true,  false),
-        KAN_DRAW_DISCARD   (true,  false),
-        RICHI_DISCARD      (false, false),
-        CHIPON_DISCARD     (false, false),
-        NORMAL_REACT       (false, false),
-        ANKAN_REACT        (false, true),
-        KAKAN_REACT        (false, true);
+        NORMAL_DRAW_DISCARD(true,  false, false),
+        ANKAN_DRAW_DISCARD (true,  true,  false),
+        KAN_DRAW_DISCARD   (true,  true,  false),
+        RICHI_DISCARD      (true,  false, false),
+        CHIPON_DISCARD     (true,  false, false),
+        NORMAL_REACT       (false, false, false),
+        ANKAN_REACT        (false, false, true),
+        KAKAN_REACT        (false, false, true);
         
+        public final boolean selfTurn;
         public final boolean rinshanable;
         public final boolean chankanable;
         
-        private RoundPhase(boolean r, boolean c) {
+        private RoundPhase(boolean s, boolean r, boolean c) {
+            selfTurn = s;
             rinshanable = r;
             chankanable = c;
         }
@@ -52,7 +56,11 @@ abstract class Game {
     }
     
     private static Game currentGameInstance = null;
+    private static final PrintWriter logger;
     private static final HashMap<String, Integer> gameInfo = new HashMap<>(16);
+    public  static final char[][] INFO_CHAR = {
+        { '？', '東', '南', '西', '北' }, { '？', '１', '２', '３', '４' }
+    };
     public  static final int[] SEQUENCE = { 4, 1, 2, 3, 4, 1, 2, 3 };
     private static final int[] dealCardArray = {
         0, 1, 2, 3, // deal 3 tiles
@@ -65,11 +73,11 @@ abstract class Game {
     protected final Player[] player;
     protected final LinkedList<Card> yama;
     protected final int bafuu;
-    protected final int shibariBase;
+    protected final int shibari;
     protected final int oyaSeat;
     protected int richibouOnTable;
     protected int[][] appearance = new int[4][10];  // 場上已知出現牌數
-    protected boolean restartable = true;
+    protected boolean firstTurn = true;
     protected RoundPhase phase = RoundPhase.NORMAL_DRAW_DISCARD;
     protected Player cp = null; // CurrentPlayer
     
@@ -82,12 +90,25 @@ abstract class Game {
     private boolean gameRenchan;// set right before returning from startRound()
     private EndReason endReason;//   and used in calculate() & updateGameInfo()
     
+    static {
+        OutputStream logOS = System.out;
+        String logFileName = Long.toString(System.currentTimeMillis()) + ".txt";
+        try {
+            logOS = new java.io.FileOutputStream(logFileName);
+        } catch (Exception ouch) {
+            ouch.printStackTrace();
+            System.err.println("Failed to create log file.");
+        }
+        logger = new PrintWriter(logOS, true, java.nio.charset.Charset.forName("UTF-8"));
+        logger.println("(This is just a log file and thus can be deleted.)");
+    }
+    
     /** 處理其他玩家對當前玩家丟牌或槓牌的反應
         於constructor記下玩家(who)及可執行的最高優先度行動種類(priority)
         玩家真正決定行動後會執行setReact並通知processReact進行判斷
     */
     final class ReactManager implements Comparable<ReactManager> {
-        private final React.Type priority;  // 最高優先度潛力
+        private final React.Type priority;
         private final Player who;
         private React dicision = React.defaultPass;
         private boolean done = false;
@@ -147,19 +168,30 @@ abstract class Game {
         }
         phase = nextRoundPhase;
         managerList.sort(null);
-        React ra = managerList.isEmpty() ?
-                   React.defaultPass : managerList.get(0).dicision;
-        if (ra.type == React.Type.PASS) {
+        React finalReact = managerList.isEmpty() ?
+                           React.defaultPass : managerList.get(0).dicision;
+        if (finalReact.type == React.Type.PASS) {
             return new SimpleEntry<>(
                 phase == RoundPhase.NORMAL_DRAW_DISCARD ?
                          player[SEQUENCE[cp.seat + 1]] : cp,
                 React.defaultPass);
         }
-        if (ra.type == React.Type.RON) {
+        Player reactPlayer = managerList.get(0).who;
+        if (finalReact.type == React.Type.RON) {
             // 如果有玩家和牌、移除非和牌類型
-            managerList.removeIf(m -> m.dicision.type != React.Type.RON);
+            Iterator<ReactManager> it = managerList.listIterator();
+            while (it.hasNext()) {
+                ReactManager rm = it.next();
+                if (rm.dicision.type != React.Type.RON) {
+                    it.remove();
+                } else {
+                    recordPlayerAction(rm.who, rm.dicision);
+                }
+            }
+        } else {
+            recordPlayerAction(reactPlayer, finalReact);
         }
-        return new SimpleEntry<>(managerList.get(0).who, ra);
+        return new SimpleEntry<>(reactPlayer, finalReact);
     }
     
     /** called in FxApplicationThread */
@@ -168,18 +200,25 @@ abstract class Game {
         this.player = player;
         yama = shuffledYama;
         bafuu = gameInfo.get("bafuu");
-        shibariBase = gameInfo.get("shibariBase") +
+        shibari = gameInfo.get("shibariBase") +
                  (gameInfo.get("bonba") > 4 ? gameInfo.get("shibariPlus") : 0);
         oyaSeat = gameInfo.get("currOyaSeat");
         richibouOnTable = gameInfo.get("richi");
-        cp = player[oyaSeat];
-        gameInfo.forEach((k ,v) -> System.out.printf(" * %s: %d%n", k, v));
+        cp = player[SEQUENCE[oyaSeat + 3]];
+        logger.printf(" *** %s *** %n", getKyokuInfo());
+        gameInfo.forEach((k ,v) -> logger.printf(" * %s: %d%n", k, v));
         
         for (int i = 1; i <= 4; ++i) {
             player[i].newRoundReset(SEQUENCE[(5 - oyaSeat + i) & 3]);
         }
         // doraList: [02468]UraDora [13579]OmoteDora
         doraList.addAll(yama.subList(4, 14));
+    }
+    
+    protected final String getKyokuInfo() {
+        return String.format("%c%c局",
+            INFO_CHAR[0][gameInfo.get("bafuu")],
+            INFO_CHAR[1][gameInfo.get("kyoku")]);
     }
     
     protected final void dealCard() {
@@ -208,30 +247,36 @@ abstract class Game {
     
     protected final void startRound() {
         flipDoraIndicator();
+        changeCurrentPlayer(player[oyaSeat]);
         React react = null; // reused after Richi & ChiPon
     PHASE_LOOP:
         while (yama.size() > 14) {
             
             /** ======================== self side ======================== */
-            System.err.println("Phase1: " + phase);
+            
             switch (phase) {
                 case NORMAL_DRAW_DISCARD:
                     react = cp.getDrawReact(cp.getDrawReactList(yama.removeLast()));
+                    recordPlayerAction(cp, react);
                     break;
                 case ANKAN_DRAW_DISCARD:
                     flipDoraIndicator();
                     react = cp.getDrawReact(cp.getDrawReactList(yama.removeFirst()));
+                    recordPlayerAction(cp, react);
                     break;
                 case KAN_DRAW_DISCARD:
                     react = cp.getDrawReact(cp.getDrawReactList(yama.removeFirst()));
+                    recordPlayerAction(cp, react);
                     flipDoraIndicator();
                     break;
                 case RICHI_DISCARD:
                     react = cp.getRichiReact(cp.getRichiReactList(react));
+                    recordPlayerAction(cp, react);
                     richiPending[cp.seat] = true;
                     break;
                 case CHIPON_DISCARD:
                     react = cp.getChiponReact(cp.getChiponReactList(react));
+                    recordPlayerAction(cp, react);
                     break;
                 default:
                     System.err.println("Unexpected Phase1: " + phase);
@@ -270,13 +315,13 @@ abstract class Game {
             }
             
             /** ======================== else side ======================== */
-            System.err.println("Phase2: " + phase);
+            
             managerList.clear();
             AtomicInteger counter = new AtomicInteger(0);
             ThreadGroup managerTG = new ThreadGroup("mtg");
             final Card focus = react.drop;
-            
             SimpleEntry<Player, React> result = null;
+            
             switch (phase) {
                 case NORMAL_REACT:
                     ++appearance[focus.vi][focus.vj];
@@ -396,7 +441,7 @@ abstract class Game {
                 player[cp.seat].ippatsu = false;
             }
             
-            if (restartable && yama.size() == 80) {// 136 - 13 * 4 - 4
+            if (firstTurn && yama.size() == 80) { // 136 - 13 * 4 - 4
                 if ((0b11110 & player[1].getKawaFirst() &
                                player[2].getKawaFirst() &
                                player[3].getKawaFirst() &
@@ -405,7 +450,7 @@ abstract class Game {
                     endReason = EndReason.FUU_4;
                     return;
                 }
-                restartable = false;
+                firstTurn = false;
             }
             
             changeCurrentPlayer(nextPlayer);
@@ -423,6 +468,7 @@ abstract class Game {
     /** should be overridden for UI */
     protected void changeCurrentPlayer(Player nextPlayer) {
         cp = nextPlayer;
+        logger.printf("`%s' %s%n", cp.name, cp.getHoldingState());
         return;
     }
     
@@ -431,12 +477,17 @@ abstract class Game {
         Card indicator = doraList.get(doraCount + 1);
         ++appearance[indicator.vi][indicator.vj];
         doraCount += 2;
+        logger.printf(" * DoraIndicator: %s%n", indicator);
         return indicator;
     }
     
-    // someone calls for something
+    protected void recordPlayerAction(Player who, React ra) {
+        logger.printf("`%s' %s%n", who.name, ra);
+        return;
+    }
+    
     private final void deIppatsu() {
-        restartable = false;
+        firstTurn = false;
         player[1].ippatsu = false;
         player[2].ippatsu = false;
         player[3].ippatsu = false;
@@ -469,6 +520,7 @@ abstract class Game {
                 List<SimpleEntry<Analyze.Bunkai, int[]>> result,
                 List<Card> finalDoraList) {
         if (endReason.midgameEnd) {
+            logger.printf(" * %s%n", endReason.text);
             return endReason.text;
         }
         int[] diff = new int[] { richibouOnTable, 0, 0, 0, 0 };
@@ -520,16 +572,25 @@ abstract class Game {
                 }
             }
             result.add(new SimpleEntry<Analyze.Bunkai, int[]>(Analyze.EMPTY, diff));
-            return nagaman.isEmpty() ? endReason.text : "流　し　満　貫";
+            String endText = nagaman.isEmpty() ? endReason.text : "流　し　満　貫";
+            logger.printf(" * %s%n%s%n", endText, getPlayerPointString());
+            return endText;
         }
         // remove nouse DoraIndicators
         doraList.subList(doraCount, 10).clear();
+        StringBuilder doraString = new StringBuilder(64);
+        doraString.append("表ドラ表示牌：");
         for (int i = 1; i < doraCount; i += 2) {
             finalDoraList.add(doraList.get(i));
+            doraString.append(doraList.get(i));
         }
+        doraString.append(System.lineSeparator());
+        doraString.append("裏ドラ表示牌：");
         for (int i = 0; i < doraCount; i += 2) {
             finalDoraList.add(doraList.get(i));
+            doraString.append(doraList.get(i));
         }
+        logger.println(doraString.toString());
         // TODO: pao
         if (endReason == EndReason.TSUMO) {
             Analyze.Bunkai bunkai = cp.analyze.summarize(doraList);
@@ -548,6 +609,7 @@ abstract class Game {
                 player[i].point += diff[i];
             }
             result.add(new SimpleEntry<Analyze.Bunkai, int[]>(bunkai, diff));
+            logger.println(bunkai.getYakuString() + getPlayerPointString());
             return endReason.text;
         }
         int bonba = gameInfo.get("bonba") * 300;
@@ -564,9 +626,19 @@ abstract class Game {
                 player[i].point += diff[i];
             }
             result.add(new SimpleEntry<Analyze.Bunkai, int[]>(bunkai, diff));
+            logger.println(bunkai.getYakuString() + getPlayerPointString());
             diff = new int[5];
         }
         return endReason.text;
+    }
+    
+    protected String getPlayerPointString() {
+        return String.format("`%s' %d%n`%s' %d%n`%s' %d%n`%s' %d%n",
+            player[1].name, player[1].point,
+            player[2].name, player[2].point,
+            player[3].name, player[3].point,
+            player[4].name, player[4].point
+        );
     }
     
     /** 更新各種資訊並回傳是否可繼續下一局遊戲、一定要在每局結束後呼叫一次 */
@@ -577,10 +649,9 @@ abstract class Game {
             if (player[i].point < 0)
                 return false;
         }
-        if (onePassPointLimit()) {
-            if (gameInfo.get("allLast") == 1 && (oyaIsTheHighest() || !gameRenchan))
-                return false;
-            if (gameInfo.get("allLast") == 2)
+        int allLast = gameInfo.get("allLast");
+        if (allLast != 0 && onePassPointLimit()) {
+            if (allLast == 2 || oyaIsTheHighest() || !gameRenchan)
                 return false;
         }
         gameInfo.put("bonba", (endReason.increaseBonba || gameRenchan) ?
@@ -652,7 +723,7 @@ abstract class Game {
             pl[4].point - 20000
         };
         for (int i = 1; i <= 4; ++i) {
-            score[i] = Math.rint​((score[i] - gameInfo.get("limitPoints")) / 1000.0);
+            score[i] = Math.rint((score[i] - gameInfo.get("limitPoints")) / 1000);
         }
         return score;
     }

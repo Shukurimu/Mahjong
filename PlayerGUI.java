@@ -3,10 +3,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ThreadLocalRandom;
+import javafx.animation.Transition;
 import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.effect.Effect;
 import javafx.scene.effect.InnerShadow;
 import javafx.scene.effect.Lighting;
@@ -16,9 +18,10 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
+import javafx.scene.Node;
+import javafx.util.Duration;
 
 final class PlayerGUI extends Player {
-    
     private static final int[] KAWACOL = {
         0, 1, 2, 3, 4, 5,
         0, 1, 2, 3, 4, 5,
@@ -29,16 +32,17 @@ final class PlayerGUI extends Player {
         1, 1, 1, 1, 1, 1,
         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
     };
+    private static final Font declFont   = Font.font("", FontWeight.BLACK,120);
     private static final Font jifuuFont  = Font.font("", FontWeight.BLACK, 28);
     private static final Font pointFont  = Font.font("", FontWeight.BOLD,  20);
     private static final Font buttonFont = Font.font("", FontWeight.BOLD,  40);
     private static final Effect cpEffect = new InnerShadow(9.0, Color.CRIMSON);
     private static final Effect ptEffect = new Lighting(new Distant(90, 135, Color.PLUM));
+    private static final double DECLTEXT_SCELING_RATIO = 0.6;
     private static final double INFO_HEIGHT = Card.W * 6 * .25;
     private static final double INFO_WIDTH  = Card.W * 6 - INFO_HEIGHT;
     private static final String[] JIFUU_TEXT = { "", "東", "南", "西", "北" };
-    private static final boolean[] SETTING_openFuda = { true, true, false, false, false };
-    private static final boolean[] SETTING_userPlay = { true, true, false, false, false };
+    private static final Duration DECL_TRANS_TIME = new Duration(700);
     
     private final boolean openFuda;
     private final boolean userPlay;
@@ -55,6 +59,7 @@ final class PlayerGUI extends Player {
     private final double FUROHAX, FUROHAY;  // 副露橫向更新方式
     private final double KAKANDX, KAKANDY;  // 加槓相對更新方式
     private final int nextSeat;
+    private final Label declLabel = new Label();
     private final Text jifuuText = new Text();
     private final Text pointText = new Text();
     private final HBox infoBox = new HBox(8, jifuuText, pointText);
@@ -63,13 +68,15 @@ final class PlayerGUI extends Player {
     
     public PlayerGUI(int seat, String name, int startPoints) {
         super(seat, name, startPoints);
-        openFuda = SETTING_openFuda[seat];
-        userPlay = SETTING_userPlay[seat];
-        nextSeat = Game.SEQUENCE[1+ seat];
+        openFuda = seat == 1;
+        userPlay = seat == 1;
+        nextSeat = Game.SEQUENCE[seat + 1];
         switch (seat) {
             case 1:
                 infoBox.setTranslateX(MainGUI.SCENE_WIDTH / 2 - Card.W * 3);
                 infoBox.setTranslateY(MainGUI.SCENE_WIDTH / 2 + Card.W * 3 - INFO_HEIGHT);
+                declLabel.setTranslateX(MainGUI.SCENE_WIDTH / 2 - MainGUI.SCENE_WIDTH / 4);
+                declLabel.setTranslateY(MainGUI.SCENE_WIDTH - MainGUI.PLAYER_AREA * 3);
                 DEG_V = 0;
                 DEG_H = 270;
                 PLUSX = (Card.H - Card.W);
@@ -98,6 +105,8 @@ final class PlayerGUI extends Player {
             case 2:
                 infoBox.setTranslateX(MainGUI.SCENE_WIDTH / 2 + Card.W * 3 - (INFO_HEIGHT + INFO_WIDTH) / 2);
                 infoBox.setTranslateY(MainGUI.SCENE_WIDTH / 2 + Card.W * 3 - (INFO_HEIGHT + INFO_WIDTH) / 2);
+                declLabel.setTranslateX(MainGUI.SCENE_WIDTH - MainGUI.PLAYER_AREA - MainGUI.SCENE_WIDTH / 4);
+                declLabel.setTranslateY(MainGUI.SCENE_WIDTH / 2 - MainGUI.PLAYER_AREA / 2);
                 DEG_V = 270;
                 DEG_H = 180;
                 PLUSX = 0;
@@ -126,6 +135,8 @@ final class PlayerGUI extends Player {
             case 3:
                 infoBox.setTranslateX(MainGUI.SCENE_WIDTH / 2 + Card.W * 3 - INFO_WIDTH);
                 infoBox.setTranslateY(MainGUI.SCENE_WIDTH / 2 - Card.W * 3);
+                declLabel.setTranslateX(MainGUI.SCENE_WIDTH / 2 - MainGUI.SCENE_WIDTH / 4);
+                declLabel.setTranslateY(MainGUI.PLAYER_AREA);
                 DEG_V = 180;
                 DEG_H = 90;
                 PLUSX = (Card.W - Card.H);
@@ -154,6 +165,8 @@ final class PlayerGUI extends Player {
             case 4:
                 infoBox.setTranslateX(MainGUI.SCENE_WIDTH / 2 - Card.W * 3 + (INFO_HEIGHT - INFO_WIDTH) / 2);
                 infoBox.setTranslateY(MainGUI.SCENE_WIDTH / 2 - Card.W * 3 - (INFO_HEIGHT - INFO_WIDTH) / 2);
+                declLabel.setTranslateX(MainGUI.PLAYER_AREA - MainGUI.SCENE_WIDTH / 4);
+                declLabel.setTranslateY(MainGUI.SCENE_WIDTH / 2 - MainGUI.PLAYER_AREA / 2);
                 DEG_V = 90;
                 DEG_H = 0;
                 PLUSX = 0;
@@ -204,6 +217,12 @@ final class PlayerGUI extends Player {
         infoBox.setMinSize(INFO_WIDTH, INFO_HEIGHT);
         infoBox.setRotate(DEG_V);
         
+        declLabel.setAlignment(Pos.CENTER);
+        declLabel.setMinSize(MainGUI.SCENE_WIDTH / 2, MainGUI.PLAYER_AREA);
+        declLabel.setFont(declFont);
+        declLabel.setTextFill(Color.WHITE);
+        declLabel.setVisible(false);
+        
         declBox.setOpacity(0.80);
         declBox.setAlignment(Pos.BOTTOM_RIGHT);
         declBox.setMinSize(MainGUI.SCENE_WIDTH - MainGUI.PLAYER_AREA * 2,
@@ -230,7 +249,7 @@ final class PlayerGUI extends Player {
     }
     
     @Override
-    public void dealCard(Card c) {  // MainGUI called in FxApplicationThread
+    public void dealCard(Card c) {
         c.moveTo(openFuda, DEG_V,
             FUDAX + fuda.size() * ADJVX,
             FUDAY + fuda.size() * ADJVY
@@ -382,7 +401,29 @@ final class PlayerGUI extends Player {
             reactList.get(ThreadLocalRandom.current().nextInt(reactList.size()));
     }
     
-    private React showSelections(List<React> reactList, Card focus) {
+    public void declareAction(String declString) {
+        declLabel.setText(declString);
+        declLabel.setScaleX(1.0);
+        declLabel.setScaleY(1.0);
+        declLabel.setVisible(true);
+        declLabel.toFront();
+        double ds = DECLTEXT_SCELING_RATIO - 1.0;
+        new Transition() {
+            {
+                this.setCycleDuration(DECL_TRANS_TIME);
+                this.setOnFinished(e -> declLabel.setVisible(false));
+            }
+            @Override protected void interpolate(double frac) {
+                double s = 1.0 + ds * Math.min(1.0, 3 * frac);
+                declLabel.setScaleX(s);
+                declLabel.setScaleY(s);
+                return;
+            }
+        }.play();
+        return;
+    }
+    
+    private React showSelections(List<React> reactList, Card selfTurnDrawn) {
         React defaultAction = reactList.get(0); // tmgr or pass
         if (reactList.size() == 1) {
             return defaultAction;
@@ -391,10 +432,10 @@ final class PlayerGUI extends Player {
             new AtomicBoolean(true), defaultAction
         );
         
-        List<Card> undo = new ArrayList<>(fuda.size() + 5);
+        List<Card> undo = new ArrayList<>(14);
         undo.addAll(fuda);
-        if (focus != null) {    // dealt card
-            undo.add(focus);
+        if (selfTurnDrawn != null) {
+            undo.add(selfTurnDrawn);
         }
         Platform.runLater(() -> undo.forEach(c -> c.setUnclickable()));
         
@@ -410,17 +451,16 @@ final class PlayerGUI extends Player {
                     }
                 });
                 Platform.runLater(() -> {
-                    declBox.getChildren().add(0, button);
                     declBox.toFront();
+                    declBox.getChildren().add(button);
+                    button.requestFocus();
                 });
             } else switch (ra.type) {
                 case ANKAN:
                     ra.cardList.get(1).setReact(entry, ra);
                     break;
                 case KAKAN:
-                    focus = furo.get(ra.index).focus;
-                    focus.setReact(entry, ra);
-                    undo.add(focus);
+                    undo.add(furo.get(ra.index).focus.setReact(entry, ra));
                     break;
                 case KIRU:
                 case KRGR:
@@ -437,6 +477,9 @@ final class PlayerGUI extends Player {
                 default:
                     System.err.println("Unexpected ReactType: " + ra.type);
             }
+        }
+        if (selfTurnDrawn != null) {
+            selfTurnDrawn.fxNodeRequestFocus();
         }
         
         synchronized (entry) {
@@ -474,8 +517,8 @@ final class PlayerGUI extends Player {
         return;
     }
     
-    public List<HBox> getFxNodes() {
-        return List.of(infoBox, declBox);
+    public List<Node> getFxNodes() {
+        return List.of(infoBox, declBox, declLabel);
     }
     
 }

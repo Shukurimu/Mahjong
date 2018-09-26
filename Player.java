@@ -30,7 +30,7 @@ abstract class Player {
         this.seat = seat;
         this.name = name;
         point = initPoint;
-        prevSeat = (seat + 2) % 4 + 1;
+        prevSeat = Game.SEQUENCE[seat + 3];
     }
     
     protected void newRoundReset(int newJifuu) {
@@ -53,35 +53,35 @@ abstract class Player {
     
     private void insertHold(Card c) {
         ++hold[c.vi][c.vj];
-        ++hold[c.vi][11];
+        ++hold[c.vi][Card.TOTAL];
         return;
     }
     
     private void insertHand(Card c) {
         ++hand[c.vi][c.vj];
-        ++hand[c.vi][11];
+        ++hand[c.vi][Card.TOTAL];
         return;
     }
     
     private void removeHand(Card c) {
         --hand[c.vi][c.vj];
-        --hand[c.vi][11];
+        --hand[c.vi][Card.TOTAL];
         return;
     }
     
     private void insertBoth(Card c) {
         ++hand[c.vi][c.vj];
-        ++hand[c.vi][11];
+        ++hand[c.vi][Card.TOTAL];
         ++hold[c.vi][c.vj];
-        ++hold[c.vi][11];
+        ++hold[c.vi][Card.TOTAL];
         return;
     }
     
     private void removeBoth(Card c) {
         --hand[c.vi][c.vj];
-        --hand[c.vi][11];
+        --hand[c.vi][Card.TOTAL];
         --hold[c.vi][c.vj];
-        --hold[c.vi][11];
+        --hold[c.vi][Card.TOTAL];
         return;
     }
     
@@ -194,7 +194,7 @@ abstract class Player {
             reactList.add(React.ankan(focus, findFuda(focus)));
         }
         
-        if (game.restartable && kindOfYaochu() >= 9) {
+        if (game.firstTurn && kindOfYaochu() >= 9) {
             reactList.add(React.kind9(focus));
         }
         removeHand(focus);
@@ -217,7 +217,7 @@ abstract class Player {
     
     protected void doRichi() {
         ippatsu = true;
-        wrichi = game.restartable;  // 雙立直一定是在還可以中途流局的時候
+        wrichi = game.firstTurn;  // 雙立直一定是在還可以中途流局的時候
         point -= 1000;
         return;
     }
@@ -361,19 +361,45 @@ abstract class Player {
         for (Card c: fuda) {
             if (c.id == x.id)
                 res.add(c);
-        };
+        }
         return res;
     }
     
-    /** TODO: more complicated cases */
     private boolean richiKanable(Card focus) {
-        if (focus.vi == 0) {                // 字牌一定可
+        final int fi = focus.vi;
+        final int fj = focus.vj;
+        if (fi == 0) {          // 字牌一定可
             return true;
         }
-        if (tenpai[focus.vi][focus.vj]) {   // 聽牌之一不可
+        if (tenpai[fi][fj]) {   // 聽牌之一不可
             return false;
         }
-        return hand[focus.vi][focus.vj - 1] + hand[focus.vi][focus.vj + 1] == 0;
+        // 若有辦法用摸到的牌種類組成順子分解就不可以槓
+        boolean kanable = true;
+        hand[fi][Card.TOTAL] -= 2;
+        if (fj - 2 >= 1 && hand[fi][fj - 2] > 0 && hand[fi][fj - 1] > 0) {
+            --hand[fi][fj - 2];
+            --hand[fi][fj - 1];
+            kanable &= testJuntsu(hand[fi], 8);
+            ++hand[fi][fj - 1];
+            ++hand[fi][fj - 2];
+        }
+        if (hand[fi][fj - 1] > 0 && hand[fi][fj + 1] > 0) {
+            --hand[fi][fj - 1];
+            --hand[fi][fj + 1];
+            kanable &= testJuntsu(hand[fi], 8);
+            ++hand[fi][fj + 1];
+            ++hand[fi][fj - 1];
+        }
+        if (fj + 2 <= 9 && hand[fi][fj + 1] > 0 && hand[fi][fj + 2] > 0) {
+            --hand[fi][fj + 1];
+            --hand[fi][fj + 2];
+            kanable &= testJuntsu(hand[fi], 8);
+            ++hand[fi][fj + 2];
+            ++hand[fi][fj + 1];
+        }
+        hand[fi][Card.TOTAL] += 2;
+        return kanable;
     }
     
     protected final void nakareru() {
@@ -419,12 +445,19 @@ abstract class Player {
         return cnt;
     }
     
+    protected final String getHoldingState() {
+        StringBuilder infoBuilder = new StringBuilder(64);
+        fuda.forEach(c -> infoBuilder.append(c));
+        furo.forEach(f -> infoBuilder.append(' ').append(f));
+        return infoBuilder.toString();
+    }
+    
     protected final String cheatInformation() {
         StringBuilder sb = new StringBuilder(192);
-        sb.append(String.format("%s  richi=%2d  furiten=%s%n", name, richiIndex, furiten));
+        sb.append(String.format("`%s'   furiten=%s%n", name, furiten));
         sb.append("__|_1__2__3__4__5__6__7__8__9_");
         for (int i = 0; i <= 3; ++i) {
-            sb.append(String.format("%n%2d|", hand[i][11]));
+            sb.append(String.format("%n%2d|", hand[i][Card.TOTAL]));
             for (int j = 1; j <= 9; ++j) {
                 if (tenpai[i][j]) {
                     sb.append('(').append(hand[i][j]).append(')');
@@ -446,78 +479,79 @@ abstract class Player {
                 --pool[z[0]][z[1]];
                 result[0][0] |= (result[z[0]][z[1]] = res);
             }
-            int[] p = null;
+            int[] pair = null;
         CHITOI_LOOP:
             for (int i = 0; i <= 3; ++i) {
                 for (int j = Card.INDEX_BOUND[i]; j >= 1; --j) {
                     if (pool[i][j] == 1) {
-                        if (p == null) {
-                            p = new int[] { i, j };
+                        if (pair == null) {
+                            pair = new int[] { i, j };
                         } else {
-                            p = null;
+                            pair = null;
                             break CHITOI_LOOP;
                         }
                     } else if (pool[i][j] >= 3) {
-                        p = null;
+                        pair = null;
                         break CHITOI_LOOP;
                     }
                 }
             }
-            if (p != null)
-                result[0][0] = result[p[0]][p[1]] = true;
+            if (pair != null)
+                result[0][0] = result[pair[0]][pair[1]] = true;
         }
         
-        List<Integer> pending = new ArrayList<Integer>(4);
-        if (pool[0][11] != 0 && !testKoutsu(pool[0], 7))
-            pending.add(0);
-        if (pool[1][11] != 0 && !testJuntsu(pool[1], 8))
-            pending.add(1);
-        if (pool[2][11] != 0 && !testJuntsu(pool[2], 8))
-            pending.add(2);
-        if (pool[3][11] != 0 && !testJuntsu(pool[3], 8))
-            pending.add(3);
-        if (pending.size() > 2) // 正常和牌型至少兩種花色可以完全分解
+        List<Integer> noPassList = new ArrayList<Integer>(4);
+        if (pool[0][Card.TOTAL] != 0 && !testKoutsu(pool[0], 7))
+            noPassList.add(0);
+        if (pool[1][Card.TOTAL] != 0 && !testJuntsu(pool[1], 8))
+            noPassList.add(1);
+        if (pool[2][Card.TOTAL] != 0 && !testJuntsu(pool[2], 8))
+            noPassList.add(2);
+        if (pool[3][Card.TOTAL] != 0 && !testJuntsu(pool[3], 8))
+            noPassList.add(3);
+        if (noPassList.size() > 2)  // 正常和牌型至少兩種花色可以完全分解
             return result;
         
-        int x = pending.get(0);
-        if (pending.size() == 1) {
-            ++pool[x][11];
-            for (int j = Card.INDEX_BOUND[x]; j >= 1; --j) {
-                ++pool[x][j];
-                if (testJyantou(pool[x], Card.INDEX_BOUND[x])) {
-                    result[0][0] = result[x][j] = true;
+        int kind1 = noPassList.get(0);
+        if (noPassList.size() == 1) {
+            ++pool[kind1][Card.TOTAL];
+            for (int j = Card.INDEX_BOUND[kind1]; j >= 1; --j) {
+                ++pool[kind1][j];
+                if (testJyantou(pool[kind1], Card.INDEX_BOUND[kind1])) {
+                    result[0][0] = result[kind1][j] = true;
                 }
-                --pool[x][j];
+                --pool[kind1][j];
             }
-            --pool[x][11];
+            --pool[kind1][Card.TOTAL];
             return result;
         }
-        if (pool[x][11] % 3 != 2) { // 剩的兩種花色只能各是3n+2張
+        if (pool[kind1][Card.TOTAL] % 3 != 2) { // 剩的兩種花色只能各是3n+2張
             return result;
         }
         
-        int y = pending.get(1);
-        if (testJyantou(pool[x], Card.INDEX_BOUND[x])) {
-            ++pool[y][11];
-            for (int j = Card.INDEX_BOUND[y]; j >= 1; --j) {
-                ++pool[y][j];
-                if (testJuntsu(pool[y], 8)) {   // y != 0
-                    result[0][0] = result[y][j] = true;
+        int kind2 = noPassList.get(1);
+        if (testJyantou(pool[kind1], Card.INDEX_BOUND[kind1])) {
+            ++pool[kind2][Card.TOTAL];
+            for (int j = Card.INDEX_BOUND[kind2]; j >= 1; --j) {
+                ++pool[kind2][j];
+                if (testJuntsu(pool[kind2], 8)) {   // kind2 != 0
+                    result[0][0] = result[kind2][j] = true;
                 }
-                --pool[y][j];
+                --pool[kind2][j];
             }
-            --pool[y][11];
+            --pool[kind2][Card.TOTAL];
         }
-        if (testJyantou(pool[y], Card.INDEX_BOUND[y])) {
-            ++pool[x][11];
-            for (int j = Card.INDEX_BOUND[x]; j >= 1; --j) {
-                ++pool[x][j];
-                if (x == 0 ? testKoutsu(pool[0], 7) : testJuntsu(pool[x], 8)) {
-                    result[0][0] = result[x][j] = true;
+        if (testJyantou(pool[kind2], Card.INDEX_BOUND[kind2])) {
+            ++pool[kind1][Card.TOTAL];
+            for (int j = Card.INDEX_BOUND[kind1]; j >= 1; --j) {
+                ++pool[kind1][j];
+                if (kind1 == 0 ? testKoutsu(pool[0], 7) :
+                                 testJuntsu(pool[kind1], 8)) {
+                    result[0][0] = result[kind1][j] = true;
                 }
-                --pool[x][j];
+                --pool[kind1][j];
             }
-            --pool[x][11];
+            --pool[kind1][Card.TOTAL];
         }
         return result;
     }
@@ -526,9 +560,9 @@ abstract class Player {
         for (int j = startJ; j >= 1; --j) {
             if (p[j] >= 2) {
                 p[j] -= 2;
-                p[11]-= 2;
+                p[Card.TOTAL] -= 2;
                 boolean res = startJ == 7 ? testKoutsu(p, 7) : testJuntsu(p, 8);
-                p[11]+= 2;
+                p[Card.TOTAL] += 2;
                 p[j] += 2;
                 if (res)
                     return true;
@@ -543,9 +577,9 @@ abstract class Player {
                 --p[j - 1];
                 --p[j];
                 --p[j + 1];
-                p[11] -= 3;
+                p[Card.TOTAL] -= 3;
                 boolean res = testJuntsu(p, j);
-                p[11] += 3;
+                p[Card.TOTAL] += 3;
                 ++p[j + 1];
                 ++p[j];
                 ++p[j - 1];
@@ -553,21 +587,21 @@ abstract class Player {
                     return true;
             }
         }
-        return p[11] == 0 || testKoutsu(p, 9);
+        return p[Card.TOTAL] == 0 || testKoutsu(p, 9);
     }
     
     private static boolean testKoutsu(int[] p, int j) {
         for ( ; j >= 1; --j) {
             if (p[j] >= 3) {
                 p[j] -= 3;
-                p[11]-= 3;
+                p[Card.TOTAL] -= 3;
                 boolean res = testKoutsu(p, j - 1);
-                p[11]+= 3;
+                p[Card.TOTAL] += 3;
                 p[j] += 3;
                 return res;
             }
         }
-        return p[11] == 0;
+        return p[Card.TOTAL] == 0;
     }
     
 }

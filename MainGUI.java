@@ -6,6 +6,7 @@ import javafx.concurrent.Task;
 import javafx.geometry.Pos;
 import javafx.geometry.HPos;
 import javafx.geometry.VPos;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -43,7 +44,6 @@ import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-// javac -encoding utf8 -Xlint:unchecked MainGUI.java
 public class MainGUI extends Application {
     public static final double PLAYER_AREA  = 60;
     public static final double SCENE_WIDTH  = 690;
@@ -97,6 +97,7 @@ public class MainGUI extends Application {
         bonbaInfo.setTranslateY((SCENE_WIDTH - INFO_H * 1.0) / 2);
         bonbaInfo.setAlignment(Pos.CENTER_LEFT);
         bonbaInfo.setBackground(null);
+        bonbaInfo.setFocusTraversable(false);
         bonbaInfo.setTextFill(Color.WHITE);
         sceneObjects.add(bonbaInfo);
         
@@ -104,6 +105,7 @@ public class MainGUI extends Application {
         richiInfo.setTranslateY((SCENE_WIDTH + INFO_H * 1.5) / 2);
         richiInfo.setAlignment(Pos.CENTER_LEFT);
         richiInfo.setBackground(null);
+        richiInfo.setFocusTraversable(false);
         richiInfo.setTextFill(Color.WHITE);
         sceneObjects.add(richiInfo);
         
@@ -394,7 +396,7 @@ public class MainGUI extends Application {
         new Thread(new Task<Void>() {   // background loading
             @Override protected Void call() throws Exception {
                 Card.fillWholeCards(deck);
-                deck.forEach(c -> sceneObjects.add(c.cardView));
+                deck.forEach(c -> sceneObjects.add(c.getFxNode()));
                 return null;
             }
             @Override protected void succeeded() {
@@ -424,9 +426,6 @@ public class MainGUI extends Application {
         { SCENE_WIDTH / 2 + Card.W * 8,     -Card.W }   //          2         
     };
     private static final double[] ROTATION = { 180, 270, 0, 90 };
-    private static final char[][] INFO_CHAR = {
-        { '？', '東', '南', '西', '北' }, { '？', '１', '２', '３', '４' }
-    };
     
     /** invoked in FxApplicationThread */
     private void gameStart() {
@@ -443,13 +442,6 @@ public class MainGUI extends Application {
         } else {
             Collections.shuffle(deck);
         }
-        
-        remainInfo.setText("70");
-        kyokuInfo.setText(String.format("%c%c局",
-            INFO_CHAR[0][gameInfo.get("bafuu")], INFO_CHAR[1][gameInfo.get("kyoku")]));
-        kyokuInfo.setTextFill(gameInfo.get("allLast") == 0 ? Color.WHITE : Color.ORANGE);
-        bonbaInfo.setText(gameInfo.get("bonba").toString());
-        richiInfo.setText(gameInfo.get("richi").toString());
         
         for (int i = 0; i < 136; ++i) {
             int j = i / 34;
@@ -503,7 +495,22 @@ public class MainGUI extends Application {
                 Platform.runLater(() -> newDoraIndicator.setNoResponse(true));
                 return null;
             }
+            @Override protected void recordPlayerAction(Player who, React ra) {
+                super.recordPlayerAction(who, ra);
+                if (ra.type.declType) {
+                    Platform.runLater(() -> slot[who.seat].declareAction(ra.type.text));
+                }
+                return;
+            }
         };
+        remainInfo.setText("70");
+        kyokuInfo.setText(game.getKyokuInfo());
+        kyokuInfo.setTextFill(gameInfo.get("allLast") == 0 ?
+                              Color.WHITE : Color.ORANGE);
+        bonbaInfo.setText(gameInfo.get("bonba").toString());
+        bonbaInfo.setTextFill(gameInfo.get("bonba") * gameInfo.get("shibariPlus") > 4 ?
+                              Color.LIME : Color.WHITE);
+        richiInfo.setText(gameInfo.get("richi").toString());
         
         new Service<Void>() {
             @Override protected Task<Void> createTask() {
@@ -678,6 +685,7 @@ public class MainGUI extends Application {
                     @Override protected Void call() throws Exception {
                         GridPane board = buildBoard(fxInfo1, fxInfo2, oldPoint, result);
                         Button ok = new Button("OK");
+                        ok.setPadding(new Insets(6, 8, 6, 8));
                         int rowIndex = board.getRowCount() + 1;
                         board.add(fxBonba, 0, rowIndex, 2, 1);
                         board.add(     ok, 2, rowIndex, 1, 1);
@@ -693,7 +701,10 @@ public class MainGUI extends Application {
                                 cd.notify();
                             }
                         });
-                        Platform.runLater(() -> sceneObjects.add(board));
+                        Platform.runLater(() -> {
+                            sceneObjects.add(board);
+                            ok.requestFocus();
+                        });
                         synchronized (cd) {
                             while (cd.decrementAndGet() > 0) {
                                 Platform.runLater(() -> ok.setText("OK" + cd.get()));
@@ -758,12 +769,13 @@ public class MainGUI extends Application {
             board.getChildren().addAll(name, point, score);
         }
         Button endButton = new Button("END");
-        endButton.setOnAction(e -> System.exit(0));
-        board.add(endButton, 0, 5, 3, 1);
         GridPane.setHalignment(endButton, HPos.CENTER);
-        
+        board.add(endButton, 0, 5, 3, 1);
         sceneObjects.clear();
         sceneObjects.add(board);
+        endButton.setOnAction(e -> System.exit(0));
+        endButton.setPadding(new Insets(6, 8, 6, 8));
+        endButton.requestFocus();
         return;
     }
     
@@ -896,9 +908,9 @@ public class MainGUI extends Application {
         for (Card c: deck) {
             cheatCardGroup.put(c, -1);
             c.moveTo(true, 0, BASE_X + Card.W * c.vj, BASE_Y + Card.H * c.vi);
-            c.cardView.toFront();
-            c.cardView.setOnMouseClicked(e -> {
-                c.cardView.toFront();
+            c.getFxNode().toFront();
+            c.getFxNode().setOnMouseClicked(e -> {
+                c.getFxNode().toFront();
                 int gid = cheatCardGroup.get(c);
                 if (gid >= 0) {
                     Card d = cheatBox.get(gid).remove(cheatBox.get(gid).size() - 1);

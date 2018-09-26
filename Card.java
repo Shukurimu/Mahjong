@@ -4,6 +4,7 @@ import java.util.EnumMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javafx.animation.Transition;
 import javafx.application.Platform;
+import javafx.scene.control.Button;
 import javafx.scene.effect.ColorAdjust;
 import javafx.scene.effect.Effect;
 import javafx.scene.effect.Lighting;
@@ -11,6 +12,7 @@ import javafx.scene.effect.Light.Distant;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.paint.Color;
+import javafx.scene.Node;
 import javafx.util.Duration;
 
 final class Card implements Comparable<Card> {
@@ -22,10 +24,11 @@ final class Card implements Comparable<Card> {
     public static final String[][] REPRESENTATION = new String[][] {
         { "", "東", "南", "西", "北", "白", "發", "中", "", "" },
         { "", "一", "二", "三", "四", "五", "六", "七", "八", "九" },
-        { "", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖" },
-        { "", "１", "２", "３", "４", "５", "６", "７", "８", "９" }
+        { "", "１", "２", "３", "４", "５", "６", "７", "８", "９" },
+        { "", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖" }
     };
     public static final int UNIT = 100;
+    public static final int TOTAL = 11;
     
     public final int vi;
     public final int vj;
@@ -46,6 +49,9 @@ final class Card implements Comparable<Card> {
         doraView.setPreserveRatio(false);
         doraView.setFitWidth(W);
         doraView.setFitHeight(H);
+        fxNode = new Button("", cardView);
+        fxNode.setBackground(null);
+        fxNode.setPadding(javafx.geometry.Insets.EMPTY);
         
         vi = i;
         vj = j == 0 ? 5 : j;
@@ -95,7 +101,8 @@ final class Card implements Comparable<Card> {
     
     @Override
     public String toString() {
-        return REPRESENTATION[vi][vj];
+        return ((order & 1) == 1) ? (REPRESENTATION[vi][vj] + "*") :
+                                     REPRESENTATION[vi][vj];
     }
     
     /** =============== The followings are GUI related stuff =============== */
@@ -103,8 +110,8 @@ final class Card implements Comparable<Card> {
     public static final int ANITIME = 192;
     public static final double W = 28;
     public static final double H = 35;
-    public static final double ADJUST_X = -(W / 2);
-    public static final double ADJUST_Y = -(H / 2);
+    public static final double ADJUST_X = -(W / 2); // 座標是以左上角為基準
+    public static final double ADJUST_Y = -(H / 2); // 但定中心點較易記算而需做轉換
     public static final double HOVER_SCALING_RATIO = 1.5;
     public static final Duration TRANS_TIME = new Duration(ANITIME);
     private static final Effect DISABLED = new ColorAdjust(0, -0.3, -0.5, 0);
@@ -114,6 +121,7 @@ final class Card implements Comparable<Card> {
     private final Image frontImage;
     public final ImageView cardView;
     public final ImageView doraView;
+    public final Button fxNode;
     
     static {
         effectMap = new EnumMap<>(React.Type.class);
@@ -146,62 +154,72 @@ final class Card implements Comparable<Card> {
         return src;
     }
     
+    public Node getFxNode() {
+        return fxNode;
+    }
+    
     public void setInYama(double r, double x, double y) {
-        cardView.toFront();
-        cardView.setRotate(r);
-        cardView.setTranslateX(x + ADJUST_X);
-        cardView.setTranslateY(y + ADJUST_Y);
         cardView.setImage(backImage);
-        cardView.setEffect​(null);
-        cardView.setScaleX(1.0);
-        cardView.setScaleY(1.0);
-        cardView.setOnMouseClicked(null);
+        fxNode.toFront();
+        fxNode.setRotate(r);
+        fxNode.setTranslateX(x + ADJUST_X);
+        fxNode.setTranslateY(y + ADJUST_Y);
+        fxNode.setScaleX(1.0);
+        fxNode.setScaleY(1.0);
+        fxNode.setEffect(null);
+        fxNode.setOnAction(null);
+        fxNode.setOnMouseClicked(null);
         return;
     }
     
     public void setNoResponse(boolean front) {
         cardView.setImage(front ? frontImage : backImage);
-        cardView.setEffect​(null);
-        cardView.setOnMouseClicked(null);
-        cardView.setOnMouseEntered​(null);
-        cardView.setOnMouseExited(null);
-        cardView.setScaleX(1.0);
-        cardView.setScaleY(1.0);
+        fxNode.setScaleX(1.0);
+        fxNode.setScaleY(1.0);
+        fxNode.setEffect(null);
+        fxNode.setOnAction(null);
+        fxNode.setOnMouseEntered(null);
+        fxNode.setOnMouseExited(null);
         return;
     }
     
     public void setUnclickable() {
-        cardView.setEffect​(DISABLED);
-        cardView.setOnMouseClicked(null);
-        cardView.setOnMouseEntered​(null);
-        cardView.setOnMouseExited(null);
-        cardView.setScaleX(1.0);
-        cardView.setScaleY(1.0);
+        fxNode.setScaleX(1.0);
+        fxNode.setScaleY(1.0);
+        fxNode.setEffect(DISABLED);
+        fxNode.setOnAction(null);
+        fxNode.setOnMouseEntered(null);
+        fxNode.setOnMouseExited(null);
         return;
     }
     
-    public void setReact(SimpleEntry<AtomicBoolean, React> entry, React ra) {
+    public void fxNodeRequestFocus() {
+        Platform.runLater(() -> this.fxNode.requestFocus());
+        return;
+    }
+    
+    public Card setReact(SimpleEntry<AtomicBoolean, React> entry, React ra) {
         Platform.runLater(() -> {
-            cardView.setEffect​(effectMap.get(ra.type));
-            cardView.setOnMouseEntered​(e -> {
+            fxNode.setEffect(effectMap.get(ra.type));
+            fxNode.setOnMouseEntered(e -> {
                 for (Card c: ra.cardList) {
-                    c.cardView.toFront();
-                    c.cardView.setScaleX(HOVER_SCALING_RATIO);
-                    c.cardView.setScaleY(HOVER_SCALING_RATIO);
+                    c.fxNode.toFront();
+                    c.fxNode.setScaleX(HOVER_SCALING_RATIO);
+                    c.fxNode.setScaleY(HOVER_SCALING_RATIO);
                 }
-                cardView.toFront();
-                cardView.setScaleX(HOVER_SCALING_RATIO);
-                cardView.setScaleY(HOVER_SCALING_RATIO);
+                fxNode.toFront();
+                fxNode.setScaleX(HOVER_SCALING_RATIO);
+                fxNode.setScaleY(HOVER_SCALING_RATIO);
             });
-            cardView.setOnMouseExited(e -> {
+            fxNode.setOnMouseExited(e -> {
                 for (Card c: ra.cardList) {
-                    c.cardView.setScaleX(1.0);
-                    c.cardView.setScaleY(1.0);
+                    c.fxNode.setScaleX(1.0);
+                    c.fxNode.setScaleY(1.0);
                 }
-                cardView.setScaleX(1.0);
-                cardView.setScaleY(1.0);
+                fxNode.setScaleX(1.0);
+                fxNode.setScaleY(1.0);
             });
-            cardView.setOnMouseClicked(e -> {
+            fxNode.setOnAction(e -> {
                 synchronized (entry) {
                     entry.setValue(ra);
                     entry.getKey().set(false);
@@ -209,27 +227,27 @@ final class Card implements Comparable<Card> {
                 }
             });
         });
-        return;
+        return this;
     }
     
     public void moveTo(boolean front, double r, double x, double y) {
-        double fromA = cardView.getRotate();
-        double fromX = cardView.getTranslateX();
-        double fromY = cardView.getTranslateY();
+        double fromA = fxNode.getRotate();
+        double fromX = fxNode.getTranslateX();
+        double fromY = fxNode.getTranslateY();
         double dA = r - fromA;
         double dX = x + ADJUST_X - fromX;
         double dY = y + ADJUST_Y - fromY;
         new Transition() {
             {
                 this.setCycleDuration(TRANS_TIME);
-                this.setOnFinished​(e ->
+                this.setOnFinished(e ->
                     cardView.setImage(front ? frontImage : backImage)
                 );
             }
             @Override protected void interpolate(double frac) {
-                cardView.setRotate(    fromA + dA * frac);
-                cardView.setTranslateX(fromX + dX * frac);
-                cardView.setTranslateY(fromY + dY * frac);
+                fxNode.setRotate(    fromA + dA * frac);
+                fxNode.setTranslateX(fromX + dX * frac);
+                fxNode.setTranslateY(fromY + dY * frac);
                 return;
             }
         }.play();
@@ -237,22 +255,22 @@ final class Card implements Comparable<Card> {
     }
     
     public void moveBy(boolean front, double dx, double dy, Card x) {
-        moveTo(front, x.cardView.getRotate(),
-            x.cardView.getTranslateX() + dx - ADJUST_X,
-            x.cardView.getTranslateY() + dy - ADJUST_Y);
+        moveTo(front, x.fxNode.getRotate(),
+            x.fxNode.getTranslateX() + dx - ADJUST_X,
+            x.fxNode.getTranslateY() + dy - ADJUST_Y);
         return;
     }
     
-    public void swapLocation(Card x) {
-        double thisR = cardView.getRotate();
-        double thisX = cardView.getTranslateX();
-        double thisY = cardView.getTranslateY();
-        cardView.setRotate(    x.cardView.getRotate());
-        cardView.setTranslateX(x.cardView.getTranslateX());
-        cardView.setTranslateY(x.cardView.getTranslateY());
-        x.cardView.setRotate(    thisR);
-        x.cardView.setTranslateX(thisX);
-        x.cardView.setTranslateY(thisY);
+    public void swapLocation(Card that) {
+        double thisR = this.fxNode.getRotate();
+        double thisX = this.fxNode.getTranslateX();
+        double thisY = this.fxNode.getTranslateY();
+        this.fxNode.setRotate(    that.fxNode.getRotate());
+        this.fxNode.setTranslateX(that.fxNode.getTranslateX());
+        this.fxNode.setTranslateY(that.fxNode.getTranslateY());
+        that.fxNode.setRotate(    thisR);
+        that.fxNode.setTranslateX(thisX);
+        that.fxNode.setTranslateY(thisY);
         return;
     }
     

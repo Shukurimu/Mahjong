@@ -3,23 +3,26 @@ import java.util.EnumSet;
 import java.util.Set;
 
 enum Yaku {
-    /** hold只在乎有沒有、hand強調需要在手牌
+    /** 判斷用hold只在乎有多少、hand需要在手牌
         furo依照id從小到大排序、負數為順子
         (fi,fj)為和了牌
     */
     Tenhou          (1, true, true, "天和", null) {
         @Override public int check(Analyze a) {
-            return (a.game.restartable && a.tsumo && a.player.jifuu == 1) ? 1 : 0;
+            return (a.game.firstTurn && a.tsumo &&
+                    a.player.jifuu == 1) ? 1 : 0;
         }
     },
     Chihou          (1, true, true, "地和", null) {
         @Override public int check(Analyze a) {
-            return (a.game.restartable && a.tsumo && a.player.jifuu != 1) ? 1 : 0;
+            return (a.game.firstTurn && a.tsumo &&
+                    a.player.jifuu != 1) ? 1 : 0;
         }
     },
     Renhou          (1, true, true, "人和", null) {
         @Override public int check(Analyze a) {
-            return (a.game.restartable && !a.tsumo && a.player.kawa.isEmpty()) ? 1 : 0;
+            return (a.game.firstTurn && !a.tsumo &&
+                    a.player.kawa.isEmpty()) ? 1 : 0;
         }
     },
     Kokushimusou    (1, true, false, "国士無双", null) {
@@ -27,9 +30,11 @@ enum Yaku {
             return check(a.hand) ? (a.hand[a.fi][a.fj] == 2 ? -1 : 1) : 0;
         }
         @Override public boolean check(int[][] h) {
-            int m07 = h[0][1] * h[0][2] * h[0][3] * h[0][4] * h[0][5] * h[0][6] * h[0][7];
-            return (m07 != 0) &&
-                m07 * h[1][1] * h[1][9] * h[2][1] * h[2][9] * h[3][1] * h[3][9] == 2;
+            for (int[] z: Card.YAOCHU_INDEXES) {
+                if ((h[z[0]][z[1]] & 3) == 0)   // must be 1 or 2
+                    return false;
+            }
+            return true;
         }
         @Override public int getValue(int cnt) {
             return cnt > 0 ? value : (value + 1);
@@ -42,12 +47,12 @@ enum Yaku {
         @Override public int check(Analyze a) {
             int[] h = a.hand[a.fi];
             int m19 = h[1] * h[9];
-            if (m19 ==  9) {// 19為3+3張、其餘1包含一張2
-                if (h[2] * h[3] * h[4] * h[5] * h[6] * h[7] * h[8] == 2) {
+            if (m19 ==  9) {    // 19為3+3張、其餘1+一種2
+                if ((h[2] * h[3] * h[4] * h[5] * h[6] * h[7] * h[8]) == 2) {
                     return h[a.fj] == 2 ? -1 : 1;
                 }
             }
-            if (m19 == 12) {// 19為3+4張、其餘都是1
+            if (m19 == 12) {    // 19為3+4張、其餘都是1
                 if ((h[2] & h[3] & h[4] & h[5] & h[6] & h[7] & h[8]) == 1) {
                     return h[a.fj] == 4 ? -1 : 1;
                 }
@@ -63,25 +68,22 @@ enum Yaku {
     },
     Daichisei       (2, true, false, "大七星", null) {
         @Override public int check(Analyze a) {
-            return (a.hand[0][11] == 14 && testDai7(a.hand[0], 1)) ? 1 : 0;
-        }
-        @Override public boolean check(int[][] h) {
-            return h[0][11] == 14 && testDai7(h[0], 1);
+            return (a.hand[0][Card.TOTAL] == 14 && testDai7(a.hand[0], 1)) ? 1 : 0;
         }
     },
     Daisuurin       (1, true, false, "大数隣", null) {
         @Override public int check(Analyze a) {
-            return (a.hand[1][11] == 14 && testDai7(a.hand[1], 2)) ? 1 : 0;
+            return (a.hand[1][Card.TOTAL] == 14 && testDai7(a.hand[1], 2)) ? 1 : 0;
         }
     },
     Daichikurin     (1, true, false, "大竹林", null) {
         @Override public int check(Analyze a) {
-            return (a.hand[2][11] == 14 && testDai7(a.hand[2], 2)) ? 1 : 0;
+            return (a.hand[2][Card.TOTAL] == 14 && testDai7(a.hand[2], 2)) ? 1 : 0;
         }
     },
     Daisyarin       (1, true, false, "大車輪", null) {
         @Override public int check(Analyze a) {
-            return (a.hand[3][11] == 14 && testDai7(a.hand[3], 2)) ? 1 : 0;
+            return (a.hand[3][Card.TOTAL] == 14 && testDai7(a.hand[3], 2)) ? 1 : 0;
         }
     },
     Suuanko         (1, true, false, "四暗刻", null) {
@@ -110,7 +112,9 @@ enum Yaku {
     },
     Tsuiso          (1, true, false, "字一色", Daichisei) {
         @Override public int check(Analyze a) {
-            return (a.hold[1][11] + a.hold[2][11] + a.hold[3][11] == 0) ? 1 : 0;
+            return (a.hold[1][Card.TOTAL] +
+                    a.hold[2][Card.TOTAL] +
+                    a.hold[3][Card.TOTAL] == 0) ? 1 : 0;
         }
     },
     Daisangen       (1, true, false, "大三元", null) {
@@ -135,8 +139,9 @@ enum Yaku {
     },
     Shousushi       (1, true, false, "小四喜", null) {
         @Override public int check(Analyze a) {
-            if (a.pairId >= 5)
+            if (a.pairId > 4) {
                 return 0;
+            }
             int count = 0;
             for (Furo f: a.furo) {
                 if (f.id >= 1 && f.id <= 4)
@@ -147,18 +152,27 @@ enum Yaku {
     },
     Chinroto        (1, true, false, "清老頭", null) {
         @Override public int check(Analyze a) {
-            return (a.hold[0][11] == 0 &&
-                   (a.hold[1][11] + a.hold[2][11] + a.hold[3][11] == a.yao9)) ? 1 : 0;
+            return (a.hold[0][Card.TOTAL] == 0 &&
+                    a.hold[1][Card.TOTAL] +
+                    a.hold[2][Card.TOTAL] +
+                    a.hold[3][Card.TOTAL] == a.yao9) ? 1 : 0;
         }
     },
     Ryuiso          (1, true, false, "緑一色", null) {
         @Override public int check(Analyze a) {
-            return (a.hold[0][6] == a.hold[0][11] + a.hold[1][11] + a.hold[3][11] +
-                    a.hold[2][1] + a.hold[2][5] + a.hold[2][7] + a.hold[2][9]) ? 1 : 0;
+            return (a.hold[0][6] ==
+                    a.hold[2][1] +
+                    a.hold[2][5] +
+                    a.hold[2][7] +
+                    a.hold[2][9] +
+                    a.hold[0][Card.TOTAL] +
+                    a.hold[1][Card.TOTAL] +
+                    a.hold[3][Card.TOTAL]) ? 1 : 0;
         }
     },
     Issyokuyonjun   (1, true, false, "一色四順", null) {
         @Override public int check(Analyze a) {
+            // 只有順子的id會可能一樣
             return (a.furo[0].id == a.furo[1].id &&
                     a.furo[0].id == a.furo[2].id &&
                     a.furo[0].id == a.furo[3].id) ? 1 : 0;
@@ -166,7 +180,7 @@ enum Yaku {
     },
     Surenko         (1, true, false, "四連刻", null) {
         @Override public int check(Analyze a) {
-            return (a.furo[0].id > Card.UNIT &&// 字牌不會有四連刻
+            return (a.furo[0].id > Card.UNIT && // 字牌不會有四連刻
                     a.furo[0].id + 1 == a.furo[1].id &&
                     a.furo[0].id + 2 == a.furo[2].id &&
                     a.furo[0].id + 3 == a.furo[3].id) ? 1 : 0;
@@ -190,12 +204,12 @@ enum Yaku {
     },
     Rinsyankaihou   (1, false, false, "嶺上開花", null) {
         @Override public int check(Analyze a) {
-            return (a.game.phase.rinshanable &&  a.tsumo) ? 1 : 0;
+            return a.game.phase.rinshanable ? 1 : 0;
         }
     },
     Chankan         (1, false, true, "槍槓", null) {
         @Override public int check(Analyze a) {
-            return (a.game.phase.chankanable && !a.tsumo) ? 1 : 0;
+            return a.game.phase.chankanable ? 1 : 0;
         }
     },
     Haiteiraoyue    (1, false, true, "海底撈月", null) {
@@ -210,18 +224,18 @@ enum Yaku {
     },
     Chinitsu        (6, false, true, "清一色", null) {
         @Override public int check(Analyze a) {
-            return (a.hold[0][11] == 0 && (
-                    a.hold[1][11] + a.hold[2][11] == 0 ||
-                    a.hold[2][11] + a.hold[3][11] == 0 ||
-                    a.hold[3][11] + a.hold[1][11] == 0)) ?
+            return (a.hold[0][Card.TOTAL] == 0 &&
+                   (a.hold[1][Card.TOTAL] + a.hold[2][Card.TOTAL] == 0 ||
+                    a.hold[2][Card.TOTAL] + a.hold[3][Card.TOTAL] == 0 ||
+                    a.hold[3][Card.TOTAL] + a.hold[1][Card.TOTAL] == 0)) ?
                     (a.player.menchin ? 1 : -1) : 0;
         }
     },
     Honitsu         (3, false, true, "混一色", Chinitsu) {
         @Override public int check(Analyze a) {
-            return (a.hold[1][11] + a.hold[2][11] == 0 ||
-                    a.hold[2][11] + a.hold[3][11] == 0 ||
-                    a.hold[3][11] + a.hold[1][11] == 0)  ?
+            return (a.hold[1][Card.TOTAL] + a.hold[2][Card.TOTAL] == 0 ||
+                    a.hold[2][Card.TOTAL] + a.hold[3][Card.TOTAL] == 0 ||
+                    a.hold[3][Card.TOTAL] + a.hold[1][Card.TOTAL] == 0)  ?
                     (a.player.menchin ? 1 : -1) : 0;
         }
     },
@@ -232,13 +246,17 @@ enum Yaku {
     },
     Honrouto        (2, false, true, "混老頭", Chinroto) {
         @Override public int check(Analyze a) {
-            return (a.hold[1][11] + a.hold[2][11] + a.hold[3][11] == a.yao9) ? 1 : 0;
+            return (a.hold[0][Card.TOTAL] +
+                    a.hold[1][Card.TOTAL] +
+                    a.hold[2][Card.TOTAL] +
+                    a.hold[3][Card.TOTAL] == a.yao9) ? 1 : 0;
         }
     },
     Shousangen      (2, false, false, "小三元", Daisangen) {
         @Override public int check(Analyze a) {
-            if (a.pairId >= 7 || a.pairId <= 5)
+            if (a.pairId > 7 || a.pairId < 5) {
                 return 0;
+            }
             int count = 0;
             for (Furo f: a.furo) {
                 if (f.id >= 5 && f.id <= 7)
@@ -251,7 +269,7 @@ enum Yaku {
         @Override public int check(Analyze a) {
             for (Furo f: a.furo) {
                 if (f.id == a.player.jifuu)
-                    return f.vj;
+                    return f.id;
             }
             return 0;
         }
@@ -272,7 +290,7 @@ enum Yaku {
         @Override public int check(Analyze a) {
             for (Furo f: a.furo) {
                 if (f.id == a.game.bafuu)
-                    return f.vj;
+                    return f.id;
             }
             return 0;
         }
@@ -324,8 +342,9 @@ enum Yaku {
     },
     Junchantaiyao   (3, false, false, "純全帯么九", null) {
         @Override public int check(Analyze a) {
-            if (a.hold[0][11] > 0 || Card.isYao9(a.pairId))
+            if (a.hold[0][Card.TOTAL] > 0 || !Card.isYao9(a.pairId)) {
                 return 0;
+            }
             for (Furo f: a.furo) {
                 if (!f.containsYao9()) {
                     return 0;
@@ -335,9 +354,10 @@ enum Yaku {
         }
     },
     Honchantaiyao   (2, false, false, "混全帯么九", Junchantaiyao) {
-        @Override public int check(Analyze a) {// 不能跟混老頭複合
-            if (Card.isYao9(a.pairId) || a.furo[0].id > 0)
+        @Override public int check(Analyze a) { // 至少一組順子
+            if (a.furo[0].id > 0 || !Card.isYao9(a.pairId)) {
                 return 0;
+            }
             for (Furo f: a.furo) {
                 if (!f.containsYao9()) {
                     return 0;
@@ -366,12 +386,12 @@ enum Yaku {
     },
     Kofonsanko      (2, false, false, "客風三刻", Daisushi) {
         @Override public int check(Analyze a) {
-            int flag = 0b11110 ^ (a.game.bafuu & a.player.jifuu);
+            int bit = 0b11110 ^ (1 << (a.game.bafuu & a.player.jifuu));
             for (Furo f: a.furo) {
                 if (f.id >= 1 && f.id <= 4)
-                    flag ^= f.id;
+                    bit ^= (1 << f.id);
             }
-            return flag == 0 ? 1 : 0;
+            return bit == 0 ? 1 : 0;
         }
     },
     Ryanpeko        (3, false, false, "二盃口", Issyokuyonjun) {
@@ -388,57 +408,21 @@ enum Yaku {
         }
     },
     Ikkitsuukan     (2, false, false, "一気通貫", null) {
-        @Override public int check(Analyze a) {
-            boolean d12 = a.furo[0].id + 3 == a.furo[1].id;
-            boolean d13 = a.furo[0].id + 3 == a.furo[2].id;
-            boolean d23 = a.furo[1].id + 3 == a.furo[2].id;
-            boolean d24 = a.furo[1].id + 3 == a.furo[3].id;
-            boolean d34 = a.furo[2].id + 3 == a.furo[3].id;
-            if (a.furo[0].id < 0 && a.furo[0].vj == 8) {
-                return ((d12 && d23) || (d12 && d24) || (d13 && d34)) ?
-                    (a.player.menchin ? 1 : -1) : 0;
-            }
-            if (a.furo[1].id < 0 && a.furo[1].vj == 8) {
-                return (d23 && d34) ?
-                    (a.player.menchin ? 1 : -1) : 0;
-            }
-            return 0;
-        }
-    },
-    Sanshokudoko    (2, false, false, "三色同刻", null) {
-        @Override public int check(Analyze a) {
-            boolean d12 = a.furo[0].id + Card.UNIT == a.furo[1].id;
-            boolean d13 = a.furo[0].id + Card.UNIT == a.furo[2].id;
-            boolean d23 = a.furo[1].id + Card.UNIT == a.furo[2].id;
-            boolean d24 = a.furo[1].id + Card.UNIT == a.furo[3].id;
-            boolean d34 = a.furo[2].id + Card.UNIT == a.furo[3].id;
-            if (a.furo[0].id > Card.UNIT) {
-                return ((d12 && d23) || (d12 && d24) || (d13 && d34)) ?
-                    (a.player.menchin ? 1 : -1) : 0;
-            }
-            if (a.furo[1].id > Card.UNIT) {
-                return (d23 && d34) ?
-                    (a.player.menchin ? 1 : -1) : 0;
-            }
-            return 0;
+        @Override public int check(Analyze a) { // 至少3組順子
+            return (a.furo[2].id > 0 && testThreeRelated(a.furo, 3)) ?
+                   (a.player.menchin ? 1 : -1) : 0;
         }
     },
     Sanshokudoujun  (2, false, false, "三色同順", null) {
-        @Override public int check(Analyze a) {
-            boolean d12 = a.furo[0].id + Card.UNIT == a.furo[1].id;
-            boolean d13 = a.furo[0].id + Card.UNIT == a.furo[2].id;
-            boolean d23 = a.furo[1].id + Card.UNIT == a.furo[2].id;
-            boolean d24 = a.furo[1].id + Card.UNIT == a.furo[3].id;
-            boolean d34 = a.furo[2].id + Card.UNIT == a.furo[3].id;
-            if (a.furo[3].id < 0) {
-                return ((d23 && d34) || (d12 && d24) || (d13 && d34)) ?
-                    (a.player.menchin ? 1 : -1) : 0;
-            }
-            if (a.furo[2].id < 0) {
-                return (d12 && d23) ?
-                    (a.player.menchin ? 1 : -1) : 0;
-            }
-            return 0;
+        @Override public int check(Analyze a) { // 至少3組順子
+            return (a.furo[2].id > 0 && testThreeRelated(a.furo, Card.UNIT)) ?
+                   (a.player.menchin ? 1 : -1) : 0;
+        }
+    },
+    Sanshokudoko    (2, false, false, "三色同刻", null) {
+        @Override public int check(Analyze a) { // 至少3組刻子
+            return (a.furo[1].id < 0 && testThreeRelated(a.furo, Card.UNIT)) ?
+                    1 : 0;
         }
     },
     Isshokusanjun   (2, false, false, "一色三順", Issyokuyonjun) {
@@ -461,19 +445,10 @@ enum Yaku {
         @Override public int check(Analyze a) {
             return check(a.hand) ? 1 : 0;
         }
-        @Override public boolean check(int[][] h) {
-            for (int i = 3; i >= 0; --i) {
-                for (int j = 1; j <= 9; ++j) {
-                    if ((h[i][j] & 5) != 0)
-                        return false;
-                }
-            }
-            return true;
-        }
     },
     Menzenchintsumo (1, false, true, "門前清自摸和", null) {
         @Override public int check(Analyze a) {
-            return (a.tsumo && a.player.menchin) ? 1 : 0;
+            return (a.player.menchin && a.tsumo) ? 1 : 0;
         }
     },
     Pinfu           (1, false, false, "平和", null) {
@@ -505,7 +480,7 @@ enum Yaku {
             return value * cnt;
         }
         @Override public String getLabel1(int cnt) {
-            return label;// 以0出現是正常的
+            return label;   // 以0出現是正常的
         }
     };
     
@@ -530,9 +505,9 @@ enum Yaku {
     
     public final int value;
     public final boolean yakuman;
-    public final boolean stackable;
+    public final boolean stackable; // 可否和特殊和牌型複合
     public final String label;
-    public final Yaku upper;    // 上位役
+    public final Yaku upper;        // 上位役
     
     private Yaku(int v, boolean y, boolean s, String l, Yaku u) {
         value = v;
@@ -542,37 +517,54 @@ enum Yaku {
         upper = u;
     }
     
-    /** 檢測是否有此役種
-        回傳==0 無
-        回傳 >0 有
-        回傳 <0 非門清減飜或其他變形(可能需要覆寫getValue及getName)
-        正確的名稱及飜數用getValue及getName取得
+    /** 檢測是否有此役種、此處輸出並非實際飜數
+        輸出==0 無
+        輸出 >0 有
+        輸出 <0 非門清減飜或其他變形(可能需要連帶覆寫以下getXXX函式)
     */
     public abstract int check(Analyze a);
     
-    /** 符不符合此役牌型、至少需要實作specialSet牌型 */
+    /** 回傳是否符合此役的和牌型、視需求覆寫即可 (e.g., 国士無双) */
     public boolean check(int[][] pool) {
         return false;
     }
     
+    /** 傳入check(Analyze)的輸出結果、回傳正確的飜數 */
     public int getValue(int cnt) {
         return cnt > 0 ? value : (value - 1);
     }
     
+    /** 傳入check(Analyze)的輸出結果、回傳正確的名稱String */
     public String getLabel1(int cnt) {
         return cnt > 0 ? label : (label + "▽");
     }
     
+    /** 傳入check(Analyze)的輸出結果、回傳顯示的飜數String */
     public String getLabel2(int cnt) {
         return String.format("%d%s", getValue(cnt), yakuman ? "ｘ" : FAN);
     }
     
+    /** 和牌型判斷：大七星、大数隣、大竹林、大車輪
+        參數傳入為 hand[index]
+    */
     private static boolean testDai7(int[] h, int index) {
         for (int i = 0; i < 7; ++i, ++index) {
             if (h[index] != 2)
                 return false;
         }
         return true;
+    }
+    
+    /** 和牌型判斷：一気通貫、三色同順、三色同刻
+        @offset 不同面子之間id的預期差距
+    */
+    private static boolean testThreeRelated(Furo[] furo, int offset) {
+        boolean d01 = furo[0].id + offset == furo[1].id;
+        boolean d02 = furo[0].id + offset == furo[2].id;
+        boolean d12 = furo[1].id + offset == furo[2].id;
+        boolean d13 = furo[1].id + offset == furo[3].id;
+        boolean d23 = furo[2].id + offset == furo[3].id;
+        return (d01 && d12) || (d01 && d13) || (d02 && d23) || (d12 && d23);
     }
     
 }

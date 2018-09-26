@@ -80,6 +80,17 @@ final class Analyze {
             return pts;
         }
         
+        public String getYakuString() {
+            StringBuilder yakuBuilder = new StringBuilder(128);
+            for (Entry<Yaku, Integer> e: content.entrySet()) {
+                yakuBuilder.append(e.getKey().getLabel1(e.getValue()))
+                           .append("   ")
+                           .append(e.getKey().getLabel2(e.getValue()))
+                           .append(System.lineSeparator());
+            }
+            return yakuBuilder.toString();
+        }
+        
         public List<String[]> getYakuList() {
             List<String[]> res = new ArrayList<>(content.size());
             for (Entry<Yaku, Integer> e: content.entrySet()) {
@@ -138,11 +149,12 @@ final class Analyze {
         fi = fj = yao9 = 0;
     }
     
+    /** 在使用constructor的時間點對象牌不應在手中 */
     public Analyze(Player player, Card focus) {
         this.game = Game.getCurrentGame();
         this.focus = focus;
         this.player = player;
-        tsumo = game.cp == player;
+        tsumo = game.phase.selfTurn;
         fi = focus.vi;
         fj = focus.vj;
         hand = player.hand;
@@ -154,7 +166,7 @@ final class Analyze {
             hand[3].clone()
         };
         ++pool[fi][fj];
-        ++pool[fi][11];
+        ++pool[fi][Card.TOTAL];
         int yao9count = focus.yao9 ? 1 : 0;
         for (int[] z: Card.YAOCHU_INDEXES) {
             yao9count += hold[z[0]][z[1]];
@@ -167,9 +179,9 @@ final class Analyze {
     
     private boolean satisfyShibari() {
         ++hand[fi][fj];
-        ++hand[fi][11];
+        ++hand[fi][Card.TOTAL];
         ++hold[fi][fj];
-        ++hold[fi][11];
+        ++hold[fi][Card.TOTAL];
         for (Yaku sp: Yaku.specialSet) {
             int v = sp.check(this);
             if (v != 0) {
@@ -180,7 +192,7 @@ final class Analyze {
         }
         int pairKind = 0;
         for (int i = 3; i >= 0; --i) {
-            if (pool[i][11] % 3 == 2) {
+            if (pool[i][Card.TOTAL] % 3 == 2) {
                 pairKind = i;
                 break;
             }
@@ -189,7 +201,7 @@ final class Analyze {
         // 雀頭的情況
         if (pairKind == fi && pool[fi][fj] >= 2) {
             pool[fi][fj] -= 2;
-            pool[fi][11] -= 2;
+            pool[fi][Card.TOTAL] -= 2;
             pairId = focus.id;
             int pairFu = 2;
             if (fi == 0) {
@@ -199,12 +211,12 @@ final class Analyze {
                     pairFu += 2;
             }
             deKoutsu(pairFu, 0, 7);
-            pool[fi][11] += 2;
+            pool[fi][Card.TOTAL] += 2;
             pool[fi][fj] += 2;
         }
         
         // 以下和了牌的花色都會少3張一次減去
-        pool[fi][11] -= 3;
+        pool[fi][Card.TOTAL] -= 3;
         
         // 刻子的情況
         if (pool[fi][fj] >= 3) {
@@ -265,16 +277,11 @@ final class Analyze {
         }
         
         --hand[fi][fj];
-        --hand[fi][11];
+        --hand[fi][Card.TOTAL];
         --hold[fi][fj];
-        --hold[fi][11];
+        --hold[fi][Card.TOTAL];
         bunkaiList.sort(null);
-        bunkaiList.forEach(System.out::println);
-        if (bunkaiList.isEmpty()) {
-            System.err.println("bunkaiList.isEmpty()   focus: " + focus);
-            return false;
-        }
-        return bunkaiList.get(0).fan >= game.shibariBase;
+        return !bunkaiList.isEmpty() && bunkaiList.get(0).fan >= game.shibari;
     }
     
     public boolean chankanOk(boolean isKakan) {
@@ -296,7 +303,7 @@ final class Analyze {
             for (int j = 1; j <= 7; ++j) {
                 if (pool[0][j] == 2) {
                     pool[0][j]  = 0;
-                    pool[0][11]-= 2;
+                    pool[0][Card.TOTAL] -= 2;
                     pairId = Card.getId(0, j);
                     int pairFu = 0;
                     if (j == game.bafuu || j >= 5)
@@ -304,7 +311,7 @@ final class Analyze {
                     if (j == player.jifuu)
                         pairFu += 2;
                     deKoutsu(baseFu + pairFu, 0, 7);
-                    pool[0][11]+= 2;
+                    pool[0][Card.TOTAL] += 2;
                     pool[0][j]  = 2;
                 }
             }
@@ -312,10 +319,10 @@ final class Analyze {
             for (int j = 1; j <= 9; ++j) {
                 if (pool[i][j] >= 2) {
                     pool[i][j] -= 2;
-                    pool[i][11]-= 2;
+                    pool[i][Card.TOTAL] -= 2;
                     pairId = Card.getId(i, j);
                     deKoutsu(baseFu, 0, 7);
-                    pool[i][11]+= 2;
+                    pool[i][Card.TOTAL] += 2;
                     pool[i][j] += 2;
                 }
             }
@@ -327,15 +334,15 @@ final class Analyze {
         for ( ; j >= 1; --j) {
             if (pool[i][j] >= 3) {
                 pool[i][j] -= 3;
-                pool[i][11]-= 3;
+                pool[i][Card.TOTAL] -= 3;
                 furo[fIndex++] = Furo.makeKoutsu(true, i, j);
                 deKoutsu(baseFu, i, j - 1);
                 --fIndex;
-                pool[i][11]+= 3;
+                pool[i][Card.TOTAL] += 3;
                 pool[i][j] += 3;
             }
         }
-        if (pool[i][11] == 0) {
+        if (pool[i][Card.TOTAL] == 0) {
             if (i == 3)
                 deFinal(baseFu);
             else
@@ -350,11 +357,11 @@ final class Analyze {
                 --pool[i][j - 1];
                 --pool[i][j];
                 --pool[i][j + 1];
-                pool[i][11]-= 3;
+                pool[i][Card.TOTAL] -= 3;
                 furo[fIndex++] = Furo.makeJuntsu(i, j);
                 deJuntsu(baseFu, i, j);
                 --fIndex;
-                pool[i][11]+= 3;
+                pool[i][Card.TOTAL] += 3;
                 ++pool[i][j + 1];
                 ++pool[i][j];
                 ++pool[i][j - 1];

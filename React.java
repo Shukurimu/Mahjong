@@ -10,7 +10,7 @@ final class React implements Comparable<React> {
         KIRU  (false, false, ""),
         KRGR  (false, false, ""),   // 空切る
         TMGR  (false, false, ""),   // ツモ切る
-        /** 以下五種回應、排愈下位者優先度愈低 */
+        /** 以下五種回應、愈下位者優先度愈低 */
         RON   (true,  true,  "ロン"),
         KAN   (false, true,  "カン"),
         PON   (false, true,  "ポン"),
@@ -45,7 +45,7 @@ final class React implements Comparable<React> {
         cardList = cList == null ? NOCARD : cList;
     }
     
-    /** 對他人出牌反應時drop指向focus */
+    /** 對他人出牌反應時drop即為focus(叫牌對象) */
     public static React pass(Card focus) {
         return new React(Type.PASS, focus, null, null, 0);
     }
@@ -54,16 +54,18 @@ final class React implements Comparable<React> {
         return new React(Type.RON, focus, null, null, 0);
     }
     
-    public static React chi(Card focus, Card c1, Card c2, int diff) {
-        return new React(Type.CHI, focus, null, List.of(c1, c2), diff);
+    /** 吃碰槓時cardList會在執行動作時從手牌拿出成為副露 */
+    public static React kan(Card focus, List<Card> sameList) {
+        return new React(Type.KAN, focus, null, sameList, 0);
     }
     
     public static React pon(Card focus, List<Card> sameList) {
         return new React(Type.PON, focus, null, sameList, 0);
     }
     
-    public static React kan(Card focus, List<Card> sameList) {
-        return new React(Type.KAN, focus, null, sameList, 0);
+    /** focus.id、focus.id+diff 為捨牌時不可打出的牌 */
+    public static React chi(Card focus, Card c1, Card c2, int diff) {
+        return new React(Type.CHI, focus, null, List.of(c1, c2), diff);
     }
     
     /** 自己回合時join為摸牌、drop為捨牌 */
@@ -87,18 +89,19 @@ final class React implements Comparable<React> {
         return new React(Type.KIRU, selected, focus, null, 0);
     }
     
+    /** 立直捨牌階段只能捨棄thrownableList裡的牌 */
     public static React richi(Card focus, List<Card> thrownableList) {
         return new React(Type.RICHI, null, focus, thrownableList, 0);
     }
     
-    /** 自己回合槓牌類的drop就是要槓的牌、join可能是null */
+    /** 自己回合槓牌類的drop是要槓的牌、join為null表示摸到的牌是第四張 */
     public static React ankan(Card focus, List<Card> sameList) {
         return sameList.size() == 3 ? // 原本只有3張
             new React(Type.ANKAN,           focus,  null, sameList, 0) :
             new React(Type.ANKAN, sameList.get(0), focus, sameList, 0);
     }
     
-    /** 於furo[index]加槓 */
+    /** 於furo[index]加槓、與暗槓的sameList都是從手牌中拿出成為副露的牌 */
     public static React kakan(Card focus, List<Card> sameList, int index) {
         return sameList.isEmpty() ?   // 手中沒有加槓牌
             new React(Type.KAKAN,           focus,  null, sameList, index) :
@@ -107,7 +110,7 @@ final class React implements Comparable<React> {
     
     @Override
     public String toString() {
-        return String.format("React.%s(drop=%s, join=%d)", type, drop, join);
+        return String.format("React.%s(drop=%s, join=%s)", type, drop, join);
     }
     
     @Override

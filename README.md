@@ -38,3 +38,4 @@ But it's more straightforward to me, though.
     - changed Card fxNode form ImageView to Button (user can press `SPACE` to perform default action now)  
     - added logger functionality for game recoding (and debugging)
     - added declaration text for player actions  
+    - updated the judgement of Ankan after richi  

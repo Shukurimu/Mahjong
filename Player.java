@@ -365,43 +365,6 @@ abstract class Player {
         return res;
     }
     
-    private boolean richiKanable(Card focus) {
-        final int fi = focus.vi;
-        final int fj = focus.vj;
-        if (fi == 0) {          // 字牌一定可
-            return true;
-        }
-        if (tenpai[fi][fj]) {   // 聽牌之一不可
-            return false;
-        }
-        // 若有辦法用摸到的牌種類組成順子分解就不可以槓
-        boolean kanable = true;
-        hand[fi][Card.TOTAL] -= 2;
-        if (fj - 2 >= 1 && hand[fi][fj - 2] > 0 && hand[fi][fj - 1] > 0) {
-            --hand[fi][fj - 2];
-            --hand[fi][fj - 1];
-            kanable &= testJuntsu(hand[fi], 8);
-            ++hand[fi][fj - 1];
-            ++hand[fi][fj - 2];
-        }
-        if (hand[fi][fj - 1] > 0 && hand[fi][fj + 1] > 0) {
-            --hand[fi][fj - 1];
-            --hand[fi][fj + 1];
-            kanable &= testJuntsu(hand[fi], 8);
-            ++hand[fi][fj + 1];
-            ++hand[fi][fj - 1];
-        }
-        if (fj + 2 <= 9 && hand[fi][fj + 1] > 0 && hand[fi][fj + 2] > 0) {
-            --hand[fi][fj + 1];
-            --hand[fi][fj + 2];
-            kanable &= testJuntsu(hand[fi], 8);
-            ++hand[fi][fj + 2];
-            ++hand[fi][fj + 1];
-        }
-        hand[fi][Card.TOTAL] += 2;
-        return kanable;
-    }
-    
     protected final void nakareru() {
         nakare.add(kawa.remove(kawa.size() - 1));
         return;
@@ -469,16 +432,123 @@ abstract class Player {
         return sb.toString();
     }
     
-    /** 每個位置補一張牌後測試是否為和牌型、有聽牌 result[0][0] == true */
+    /** https://ja.wikipedia.org/wiki/%E7%AB%8B%E7%9B%B4
+        4.1 リーチ後の暗槓が認められないケース
+    */
+    private boolean richiKanable(Card focus) {
+        final int fi = focus.vi;
+        final int fj = focus.vj;
+        if (fi == 0) {          // 字牌一定可
+            return true;
+        }
+        if (tenpai[fi][fj]) {   // 聽牌之一不可
+            return false;
+        }
+        
+        // [3N+1] 如果作為雀頭還有聽牌→此牌參與某組順子→不可
+        if (hand[fi][Card.TOTAL] % 3 == 1) {
+            boolean stillTenpai = false;
+            --hand[fi][Card.TOTAL];
+            hand[fi][fj] -= 2;
+            for (int j = 1; j <= 9; ++j) {
+                ++hand[fi][j];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                --hand[fi][j];
+            }
+            hand[fi][fj] += 2;
+            ++hand[fi][Card.TOTAL];
+            return !stillTenpai;
+        }
+        
+        // [3N] 抽掉此牌組成的順子後可以完整分解→此牌參與某組順子→不可
+        if (hand[fi][Card.TOTAL] % 3 == 0) {
+            boolean stillTenpai = false;
+            hand[fi][Card.TOTAL] -= 3;
+            --hand[fi][fj];
+            if (fj - 2 >= 1 && hand[fi][fj - 2] > 0 && hand[fi][fj - 1] > 0) {
+                --hand[fi][fj - 2];
+                --hand[fi][fj - 1];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                ++hand[fi][fj - 1];
+                ++hand[fi][fj - 2];
+            }
+            if (hand[fi][fj - 1] > 0 && hand[fi][fj + 1] > 0) {
+                --hand[fi][fj - 1];
+                --hand[fi][fj + 1];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                ++hand[fi][fj + 1];
+                ++hand[fi][fj - 1];
+            }
+            if (fj + 2 <= 9 && hand[fi][fj + 1] > 0 && hand[fi][fj + 2] > 0) {
+                --hand[fi][fj + 1];
+                --hand[fi][fj + 2];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                ++hand[fi][fj + 2];
+                ++hand[fi][fj + 1];
+            }
+            ++hand[fi][fj];
+            hand[fi][Card.TOTAL] += 3;
+            return !stillTenpai;
+        }
+        
+        boolean stillTenpai = false;
+        hand[fi][Card.TOTAL] -= 2;
+        // 作為雀頭時
+        --hand[fi][fj];
+        stillTenpai |= testJuntsu(hand[fi], 8);
+        ++hand[fi][fj];
+        // 作為順子時
+        if (fj - 2 >= 1 && hand[fi][fj - 2] > 0 && hand[fi][fj - 1] > 0) {
+            --hand[fi][fj - 2];
+            --hand[fi][fj - 1];
+            for (int j = 1; j <= 9; ++j) {
+                ++hand[fi][j];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                --hand[fi][j];
+            }
+            ++hand[fi][fj - 1];
+            ++hand[fi][fj - 2];
+        }
+        if (hand[fi][fj - 1] > 0 && hand[fi][fj + 1] > 0) {
+            --hand[fi][fj - 1];
+            --hand[fi][fj + 1];
+            for (int j = 1; j <= 9; ++j) {
+                ++hand[fi][j];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                --hand[fi][j];
+            }
+            ++hand[fi][fj + 1];
+            ++hand[fi][fj - 1];
+        }
+        if (fj + 2 <= 9 && hand[fi][fj + 1] > 0 && hand[fi][fj + 2] > 0) {
+            --hand[fi][fj + 1];
+            --hand[fi][fj + 2];
+            for (int j = 1; j <= 9; ++j) {
+                ++hand[fi][j];
+                stillTenpai |= testJuntsu(hand[fi], 8);
+                --hand[fi][j];
+            }
+            ++hand[fi][fj + 2];
+            ++hand[fi][fj + 1];
+        }
+        hand[fi][Card.TOTAL] += 2;
+        return !stillTenpai;
+    }
+    
+    /** 計算當前手牌的聽牌、若有聽牌 result[0][0] == true */
     protected static boolean[][] computeTenpai(final int[][] pool, boolean menchin) {
         boolean[][] result = new boolean[4][10];
+        
+        // 特殊和牌型必須門清
         if (menchin) {
+            // 国士無双只需要測試各種么九牌
             for (int[] z: Card.YAOCHU_INDEXES) {
                 ++pool[z[0]][z[1]];
                 boolean res = Yaku.Kokushimusou.check(pool);
                 --pool[z[0]][z[1]];
                 result[0][0] |= (result[z[0]][z[1]] = res);
             }
+            // 七対子只能有一個單張且其他牌只能是0或2張
             int[] pair = null;
         CHITOI_LOOP:
             for (int i = 0; i <= 3; ++i) {
@@ -496,10 +566,12 @@ abstract class Player {
                     }
                 }
             }
-            if (pair != null)
+            if (pair != null) {
                 result[0][0] = result[pair[0]][pair[1]] = true;
+            }
         }
         
+        // 正常和牌型最多兩種花色無法完全分解
         List<Integer> noPassList = new ArrayList<Integer>(4);
         if (pool[0][Card.TOTAL] != 0 && !testKoutsu(pool[0], 7))
             noPassList.add(0);
@@ -509,12 +581,14 @@ abstract class Player {
             noPassList.add(2);
         if (pool[3][Card.TOTAL] != 0 && !testJuntsu(pool[3], 8))
             noPassList.add(3);
-        if (noPassList.size() > 2)  // 正常和牌型至少兩種花色可以完全分解
+        if (noPassList.size() > 2)
             return result;
         
         int kind1 = noPassList.get(0);
+        // 只有一種的情況雀頭一定是此種花色
         if (noPassList.size() == 1) {
             ++pool[kind1][Card.TOTAL];
+            // 每個位置補一張從雀頭開始分解
             for (int j = Card.INDEX_BOUND[kind1]; j >= 1; --j) {
                 ++pool[kind1][j];
                 if (testJyantou(pool[kind1], Card.INDEX_BOUND[kind1])) {
@@ -525,11 +599,13 @@ abstract class Player {
             --pool[kind1][Card.TOTAL];
             return result;
         }
-        if (pool[kind1][Card.TOTAL] % 3 != 2) { // 剩的兩種花色只能各是3n+2張
+        // 剩的兩種花色只能各是3n+2張
+        if (pool[kind1][Card.TOTAL] % 3 != 2) {
             return result;
         }
         
         int kind2 = noPassList.get(1);
+        // 雀頭為kindX並且可以完全分解則在kindY每個位置補一張測試
         if (testJyantou(pool[kind1], Card.INDEX_BOUND[kind1])) {
             ++pool[kind2][Card.TOTAL];
             for (int j = Card.INDEX_BOUND[kind2]; j >= 1; --j) {
@@ -556,12 +632,21 @@ abstract class Player {
         return result;
     }
     
+    /** 嘗試能否完整分解某種花色
+        testJyantou 從雀頭開始
+        testJuntsu  從順子開始
+        testKoutsu  從刻子開始
+        @p          待檢測花色的手牌
+        @startJ     開始檢測的index
+    */
     private static boolean testJyantou(int[] p, int startJ) {
         for (int j = startJ; j >= 1; --j) {
             if (p[j] >= 2) {
                 p[j] -= 2;
                 p[Card.TOTAL] -= 2;
-                boolean res = startJ == 7 ? testKoutsu(p, 7) : testJuntsu(p, 8);
+                boolean res = startJ == 7 ?
+                              testKoutsu(p, 7) :
+                              testJuntsu(p, 8);
                 p[Card.TOTAL] += 2;
                 p[j] += 2;
                 if (res)

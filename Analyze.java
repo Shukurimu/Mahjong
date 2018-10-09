@@ -70,9 +70,26 @@ final class Analyze {
             return content.containsKey(Yaku.UraDora);
         }
         
+        public boolean isYakuman() {
+            return fan >= YAKUMAN_THRESHOLD;
+        }
+        
+        public Card getPao() {
+            if (!isYakuman()) {
+                return null;
+            }
+            Card candidate = null;
+            for (Yaku y: content.keySet()) {
+                if (candidate == null) {
+                    candidate = y.paoCard(player.furo);
+                }
+            }
+            return candidate;
+        }
+        
         public int getPoint() {
             if (pts < 0) {
-                if (fan >= YAKUMAN_THRESHOLD) {
+                if (isYakuman()) {
                     content.keySet().removeIf(k -> !k.yakuman);
                 }
                 pts = calcPoint(fan, fu);
@@ -104,7 +121,7 @@ final class Analyze {
         
         public String getSummaryString() {
             return content.isEmpty() ? "" : (
-               (fan >= YAKUMAN_THRESHOLD ?
+               (isYakuman() ?
                     String.format("%dx", fan >> YAKUMAN_SHIFT) :
                     String.format("%d%s%d%s", fu, Yaku.FU, fan, Yaku.FAN)) +
                 String.format("　%s%d点", calcTitle(fan, fu),
@@ -286,7 +303,7 @@ final class Analyze {
     
     public boolean chankanOk(boolean isKakan) {
         return satisfyShibari() &&
-              (isKakan || (bunkaiList.get(0).fan >= YAKUMAN_THRESHOLD));
+              (isKakan || bunkaiList.get(0).isYakuman());
     }
     
     public boolean ok() {

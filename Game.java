@@ -591,18 +591,28 @@ abstract class Game {
             doraString.append(doraList.get(i));
         }
         logger.println(doraString.toString());
-        // TODO: pao
+        
         if (endReason == EndReason.TSUMO) {
             Analyze.Bunkai bunkai = cp.analyze.summarize(doraList);
             int bonba = gameInfo.get("bonba") * 100;
             int ratio = cp.seat == oyaSeat ? 2 : 1;
             int basic = bunkai.getPoint();
-            for (int i = 1; i <= 3; ++i) {
-                int k = SEQUENCE[cp.seat + i];
-                int p = carry100(basic * (k == oyaSeat ? 2 : ratio)) + bonba;
-                diff[k] -= p;
-                diff[cp.seat] += p;
+            
+            Card pao = bunkai.getPao();
+            if (pao == null) {
+                for (int i = 1; i <= 3; ++i) {
+                    int k = SEQUENCE[cp.seat + i];
+                    int p = carry100(basic * (k == oyaSeat ? 2 : ratio)) + bonba;
+                    diff[k] -= p;
+                    diff[cp.seat] += p;
+                }
+            } else {
+                int whole = carry100(basic * (cp.seat == oyaSeat ? 6 : 4));
+                int total = whole + bonba * 3;
+                diff[findSource(pao)] -= total;
+                diff[cp.seat] += total;
             }
+            
             diff[cp.seat] += richibouOnTable * 1000;
             richibouOnTable = 0;
             for (int i = 1; i <= 4; ++i) {
@@ -612,15 +622,24 @@ abstract class Game {
             logger.println(bunkai.getYakuString() + getPlayerPointString());
             return endReason.text;
         }
+        
         int bonba = gameInfo.get("bonba") * 300;
         for (ReactManager rm: managerList) {
             Player op = rm.who;
             Analyze.Bunkai bunkai = op.analyze.summarize(doraList);
             int basic = bunkai.getPoint();
-            int whole = carry100(basic * (op.seat == oyaSeat ? 6 : 4)) + bonba;
-            bonba = 0;// calculate once
-            diff[cp.seat] -= whole;
-            diff[op.seat] += whole + richibouOnTable * 1000;
+            int whole = carry100(basic * (op.seat == oyaSeat ? 6 : 4));
+            
+            Card pao = bunkai.getPao();
+            if (pao == null) {
+                diff[cp.seat] -= bonba + whole;
+            } else {
+                diff[cp.seat] -= bonba + whole / 2;
+                diff[findSource(pao)] -= whole / 2;
+            }
+            
+            diff[op.seat] += bonba + whole + richibouOnTable * 1000;
+            bonba = 0;  // calculate once
             richibouOnTable = 0;
             for (int i = 1; i <= 4; ++i) {
                 player[i].point += diff[i];
@@ -663,7 +682,7 @@ abstract class Game {
             
             if (nextOyaSeat == initOyaSeat) {
                 gameInfo.put("kyoku", 1);
-                int nextBafuu = gameInfo.get("bafuu") + 1;// 不考慮東入
+                int nextBafuu = gameInfo.get("bafuu") + 1;  // 不考慮東入
                 int gameLimit = gameInfo.get("totalLength") + 1;
                 if (nextBafuu > gameLimit)
                     return false;
@@ -693,6 +712,16 @@ abstract class Game {
                 return true;
         }
         return false;
+    }
+    
+    /** 尋找目標牌是由哪個坐位的玩家丟的 */
+    private final int findSource(Card target) {
+        for (int i = 1; i <= 4; ++i) {
+            if (player[i].isFromPlayer(target))
+                return i;
+        }
+        System.err.println("Cannot find the source of " + target);
+        return 0;
     }
     
     protected static int carry100(int originalValue) {

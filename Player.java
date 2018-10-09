@@ -370,6 +370,11 @@ abstract class Player {
         return;
     }
     
+    /** 確認目標牌是否來自此玩家 */
+    protected final boolean isFromPlayer(Card target) {
+        return nakare.contains(target);
+    }
+    
     protected final boolean isTenpai() {
         return tenpai[0][0];
     }

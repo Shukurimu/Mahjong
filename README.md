@@ -30,12 +30,15 @@ But it's more straightforward to me, though.
 
 ### Update History
 
-- 201808~20180923 framework
+- 201808~20180923 framework  
 - 20180926  
     - fixed some Yaku verifying bugs  
     - updated the judgement of Ankan after richi  
     - added more comments and renamed some variables to be more self-explainable  
     - changed Card fxNode form ImageView to Button (user can press `SPACE` to perform default action now)  
-    - added logger functionality for game recoding (and debugging)
+    - added logger functionality for game recoding (and debugging)  
     - added declaration text for player actions  
+- 20181005  
     - updated the judgement of Ankan after richi  
+- 20181009  
+    - implemented `Pao` mechanism  

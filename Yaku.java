@@ -1,5 +1,6 @@
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 enum Yaku {
@@ -109,6 +110,9 @@ enum Yaku {
                         a.furo[3].type.kantsu;
             return count == 4 ? 1 : 0;
         }
+        @Override public Card paoCard(List<Furo> furoList) {
+            return furoList.size() == 4 ? furoList.get(3).focus : null;
+        }
     },
     Tsuiso          (1, true, false, "字一色", Daichisei) {
         @Override public int check(Analyze a) {
@@ -126,6 +130,19 @@ enum Yaku {
             }
             return count == 3 ? 1 : 0;
         }
+        @Override public Card paoCard(List<Furo> furoList) {
+            if (furoList.size() == 4 &&
+                    furoList.get(3).id >= 5 &&
+                    furoList.get(3).id <= 7) {
+                return furoList.get(3).focus;
+            }
+            if (furoList.size() >= 3 &&
+                    furoList.get(2).id >= 5 &&
+                    furoList.get(2).id <= 7) {
+                return furoList.get(2).focus;
+            }
+            return null;
+        }
     },
     Daisushi        (2, true, false, "大四喜", null) {
         @Override public int check(Analyze a) {
@@ -135,6 +152,9 @@ enum Yaku {
                     ++count;
             }
             return count == 4 ? 1 : 0;
+        }
+        @Override public Card paoCard(List<Furo> furoList) {
+            return furoList.size() == 4 ? furoList.get(3).focus : null;
         }
     },
     Shousushi       (1, true, false, "小四喜", null) {
@@ -177,6 +197,9 @@ enum Yaku {
                     a.furo[0].id == a.furo[2].id &&
                     a.furo[0].id == a.furo[3].id) ? 1 : 0;
         }
+        @Override public Card paoCard(List<Furo> furoList) {
+            return furoList.size() == 4 ? furoList.get(3).focus : null;
+        }
     },
     Surenko         (1, true, false, "四連刻", null) {
         @Override public int check(Analyze a) {
@@ -184,6 +207,9 @@ enum Yaku {
                     a.furo[0].id + 1 == a.furo[1].id &&
                     a.furo[0].id + 2 == a.furo[2].id &&
                     a.furo[0].id + 3 == a.furo[3].id) ? 1 : 0;
+        }
+        @Override public Card paoCard(List<Furo> furoList) {
+            return furoList.size() == 4 ? furoList.get(3).focus : null;
         }
     },
     
@@ -542,6 +568,13 @@ enum Yaku {
     /** 傳入check(Analyze)的輸出結果、回傳顯示的飜數String */
     public String getLabel2(int cnt) {
         return String.format("%d%s", getValue(cnt), yakuman ? "ｘ" : FAN);
+    }
+    
+    /** 包牌的來源、對於會有包牌可能的役滿役需要覆寫此函式
+        由於包牌是造成該役的最後一組副露、傳入的參數使用Player.furo
+    */
+    public Card paoCard(List<Furo> furoList) {
+        return null;
     }
     
     /** 和牌型判斷：大七星、大数隣、大竹林、大車輪
